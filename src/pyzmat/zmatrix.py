@@ -366,9 +366,9 @@ class ZMatrix:
         self.var_list = self._extract_variables()  # Extract new variables
         return self.zmat, result.fun
 
-    def view(self):
-        from ase.visualise import view
-        view(self.get_atoms(), viewer = 'x3d')
+    def view_ase(self):
+        from ase.visualize import view
+        return view(self.get_atoms(), viewer = 'x3d')
     
     def optimise_ase(self, trajectory = None, mode = 'linesearch'):
         print('Initialising minimisation routine')
