@@ -201,12 +201,17 @@ class ZMatrix:
         atoms.calc = self.calculator
         forces_cart_2d = atoms.get_forces(apply_constraint=False)
         forces_cart = np.array(forces_cart_2d).reshape(-1, 1)
-        B_full = ZmatUtils.get_B_matrix(self.zmat, self.zmat_conn)
-        if self.con_ids:
-            B_reduced = np.delete(B_full, self.con_ids, axis=0)
-        else:
-            B_reduced = B_full
-        forces = (B_reduced @ forces_cart).flatten()
+        B = ZmatUtils.get_B_matrix(self.zmat, self.zmat_conn)
+        forces = (B @ forces_cart).flatten()
+        return forces
+
+    def get_fd_forces(self):
+        atoms = ZmatUtils.zmat_2_atoms(self.zmat, self.zmat_conn)
+        atoms.calc = self.calculator
+        forces_cart_2d = atoms.get_forces(apply_constraint=False)
+        forces_cart = np.array(forces_cart_2d).reshape(-1, 1)
+        B = ZmatUtils.get_fd_B_matrix(self.zmat, self.zmat_conn, 1e-5, 1e-3, 1e-3)
+        forces = (B @ forces_cart).flatten()
         return forces
 
     def get_forces_cart(self):

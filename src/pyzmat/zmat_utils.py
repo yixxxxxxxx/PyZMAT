@@ -1,5 +1,6 @@
 import numpy as np
 from ase import Atoms
+import copy
 
 class ZmatUtils:
     """
@@ -449,6 +450,9 @@ class ZmatUtils:
             raise IndexError("r_i is out of range in the backward-perturbed atoms object.")
     
         fd_grad = (r_fwd - r_bwd) / (2 * delta)
+
+        if q_j in [2, 3]:
+            fd_grad *= 180.0 / np.pi
         return fd_grad
 
     @staticmethod
