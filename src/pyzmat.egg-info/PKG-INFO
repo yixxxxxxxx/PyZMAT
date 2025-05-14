@@ -1,0 +1,11 @@
+Metadata-Version: 2.1
+Name: pyzmat
+Version: 0.1.0
+Summary: Wrapper around ASE & ML-FFs for internal-coordinate workflows
+Author: Yixuan Huang
+Classifier: Programming Language :: Python :: 3
+Classifier: Topic :: Scientific/Engineering :: Chemistry
+Requires-Python: >=3.7
+Requires-Dist: ase>=3.23.1
+Requires-Dist: numpy>=1.20
+Requires-Dist: scipy>=1.6
