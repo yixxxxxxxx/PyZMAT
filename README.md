@@ -1,6 +1,10 @@
 # PyZMAT
 
+Author: Yixuan Huang
+
 ASE wrapper for workflows in internal coordinates/Z-Matrix.
+
+Built as a personal tool as a part of my research in ML-CSP under the HAIEFF framework [citations]. 
 
 ## Main capabilities
 
@@ -15,3 +19,7 @@ ASE wrapper for workflows in internal coordinates/Z-Matrix.
 (placeholder)
 
 PyZMAT should work independently if you only wish to use its coordinate transform capabilities. Please install this package in a working MACE or AIMNet2 conda environment if you wish to use ML-FFs. 
+
+## Acknowledgements
+
+Benjamin Tan for calculating the analytical first derivatives [citation].
