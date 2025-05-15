@@ -375,7 +375,7 @@ class ZMatrix:
         from ase.visualize import view
         return view(self.get_atoms(), viewer = 'x3d')
     
-    def optimise_ase(self, trajectory = None, mode = 'linesearch'):
+    def optimise_ase(self, trajectory = None, mode = 'linesearch', fmax = 1e-5):
         print('Initialising minimisation routine')
         start_tot = time.perf_counter()
         print('Model used:', self.calculator, self.model_size)
@@ -394,11 +394,11 @@ class ZMatrix:
         atoms.set_constraint([self.ase_constraints])
 
         if mode == 'linesearch':
-            dyn = BFGSLineSearch(atoms, trajectory = trajectory, restart = f'{self.name}_opt.json')
+            dyn = BFGSLineSearch(atoms, trajectory = trajectory, restart = f'{self.name}_linesearch_opt.json')
             print('Now beginning ASE BFGS Line Search minimisation routine')
             print('--------------------------------------------------------------------------------------')
             start_min = time.perf_counter()
-            dyn.run(fmax=1e-8)
+            dyn.run(fmax = fmax)
             end_min = time.perf_counter()
             energy = atoms.get_potential_energy()
             print('--------------------------------------------------------------------------------------')
@@ -406,11 +406,11 @@ class ZMatrix:
             print('--------------------------------------------------------------------------------------')
 
         elif mode == 'bfgs':
-            dyn = BFGS(atoms, trajectory = trajectory, restart = f'{self.name}_opt.json')
+            dyn = BFGS(atoms, trajectory = trajectory, restart = f'{self.name}_bfgs_opt.json')
             print('Now beginning ASE BFGS minimisation routine')
             print('--------------------------------------------------------------------------------------')
             start_min = time.perf_counter()
-            dyn.run(fmax=1e-8)
+            dyn.run(fmax = fmax)
             end_min = time.perf_counter()
             energy = atoms.get_potential_energy()
             print('--------------------------------------------------------------------------------------')
