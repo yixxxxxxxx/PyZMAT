@@ -16,24 +16,33 @@ from .print_utils import PrintUtils
 from .constraints import Constraints
 from .parse_utils import ParseUtils
 
+import json
+
+from typing import Tuple, Optional
+
 
 class ZMatrix:
 
-    def __init__(self, zmat, zmat_conn, constraints = None, name = None):
+    def __init__(self, zmat, zmat_conn, constraints = None, name = None, energy = None, forces = None, hessian = None):
         self.name = name if name else "unnamed molecule"
         self.zmat = zmat
         self.zmat_conn = zmat_conn  # Each connectivity is now (symbol, bond, angle, dihedral)
         self.constraints = constraints if constraints else Constraints()  # Default to empty constraints
     
 
-        # Create a dictionary mapping global DOF indices to constraint values.
-        # If a constraint's value is None, use the current zmat value.
+        # Pretty unused, ignore these
         self.con_dict = self._find_constraint_values()
         self.con_ids = list(self.con_dict.keys())
         self._apply_constraints()
         self.var_ids = self._find_var_ids()  # Find variable indices
         self.var_list = self._extract_variables()  # Extract initial variables
-        self.b_matrix = self._get_B_matrix()
+
+
+        
+        self.b_matrix = None
+        self.energy = energy if energy is not None else None
+        self.forces = forces if forces is not None else None
+        self.hessian = hessian if hessian is not None else None
         self.ase_constraints = self._get_ase_constraints()
         
         self.iteration = 0
@@ -41,7 +50,57 @@ class ZMatrix:
     def __repr__(self):
         return f"ZMatrix({len(self.zmat_conn)} atoms, {self.constraints})"
 
+    @classmethod
+    def load_json(cls, filename: str) -> "ZMatrix":
+        """
+        Load a ZMatrix object (and its last forces/energy/hessian, if present)
+        from a JSON file produced by dump_json().
+        The .json files dumped by pyzmat.ZMatrix has name_ZMatrix.json by default. 
+        """
+        with open(filename, "r") as f:
+            state = json.load(f)
+
+        # rebuild arrays
+        zmat      = [list(row) for row in state["zmat"]]
+        zmat_conn = [tuple(item) for item in state["zmat_conn"]]
+
+        # rebuild Constraints object
+        cons = state["constraints"]
+        constraints = Constraints(
+            bonds     = [tuple(item) for item in cons["bonds"]],
+            angles    = [tuple(item) for item in cons["angles"]],
+            dihedrals = [tuple(item) for item in cons["dihedrals"]],
+        )
+
+        # call constructor
+        obj = cls(zmat = zmat,
+                  zmat_conn = zmat_conn,
+                  constraints = constraints,
+                  name = state.get("name"))
+
+        # attach stored post‐init attributes if they exist
+        if state.get("forces") is not None:
+            obj.forces = np.array(state["forces"], dtype = float)
+        if state.get("energy") is not None:
+            obj.energy = float(state["energy"])
+        if state.get("hessian") is not None:
+            obj.hessian = np.array(state["hessian"], dtype = float)
+
+        return obj
+
+    @classmethod
+    def load_pickle(cls, filename: str) -> "ZMatrix":
+        """Load an instance back (only for trusted files!)."""
+        import pickle
+        
+        with open(filename, "rb") as f:
+            obj = pickle.load(f)
+        if not isinstance(obj, cls):
+            raise TypeError("Pickle file did not contain a ZMatrix instance")
+        return obj
+
     def attach_calculator(self, model, model_size = 'large', gpu = False):
+        """Attach an MLIP as an ASE calculator to the ZMatrix object. Only supports MACE-off23 ('mace') and AIMNet2 ('aimnet2') at the moment."""
         if model not in ['mace', 'aimnet2']:
             raise ValueError("Only MACE-off23 ('mace') and AIMNet2 ('aimnet2') are currently supported")
         if model == 'mace':
@@ -62,7 +121,11 @@ class ZMatrix:
 
         self.model = model
 
+
+    ## Some helper functions for the unused custom optimisation routine ###########################################################################################
+
     def _find_constraint_values(self):
+        """Tied to the unused ZMatrix.optimise() routine"""
         con_dict = {}
         # Bonds: global index = index * 3
         for index, val in self.constraints.bonds:
@@ -85,27 +148,32 @@ class ZMatrix:
         return con_dict
 
     def _apply_constraints(self):
+        """Tied to the unused ZMatrix.optimise() routine"""
         for global_index, value in self.con_dict.items():
             atom_index = global_index // 3
             coord_index = (global_index % 3) + 1
             self.zmat[atom_index][coord_index] = value
 
     def _find_var_ids(self):
+        """Tied to the unused ZMatrix.optimise() routine"""
         total_vars = 3 * len(self.zmat)
         var_ids = [i for i in range(total_vars) if i not in self.con_ids and self._get_value_by_index(i) is not None]
         return var_ids
 
     def _get_value_by_index(self, index):
+        """Tied to the unused ZMatrix.optimise() routine"""
         atom_idx = index // 3
         coord_idx = index % 3
         return self.zmat[atom_idx][coord_idx + 1]
 
     def _extract_variables(self):
+        """Tied to the unused ZMatrix.optimise() routine"""
         all_values = [coord for row in self.zmat for coord in row[1:]]
         all_values = np.array(all_values)
         return all_values[self.var_ids]
 
     def _reconstruct_full_z_matrix(self, vars):
+        """Tied to the unused ZMatrix.optimise() routine"""
         full_values = np.array([coord for row in self.zmat for coord in row[1:]])
         var_id = 0
         for i in range(len(full_values)):
@@ -125,6 +193,8 @@ class ZMatrix:
             reconstructed_zmat.append((atom, *new_values))
         return reconstructed_zmat
 
+    ## Calculate tensors of coordinate derivatives from pyzmat.ZmatUtils #######################################################
+
     def _get_B_matrix(self):
         B = ZmatUtils.get_B_matrix(self.zmat, self.zmat_conn)
         return B
@@ -132,6 +202,8 @@ class ZMatrix:
     def _get_K_tensor(self):
         K = ZmatUtils.get_curvature_tensor(self.zmat, self.zmat_conn)
         return K
+
+    ## Extract ase constraints from pyzmat.Constraint object ##################################################################
 
     def _get_ase_constraints(self):
         # Build ASE constraints using the provided (or default) values.
@@ -167,8 +239,10 @@ class ZMatrix:
         c = FixInternals(**kwargs)
         return c
 
+    ## Functions for transforming ZMatrix format into a few useful formats (AIMNet2 and ASE) ###################################
     @staticmethod
     def get_aimnet_data(atoms):
+        """Form the input data format for the standalone aimnet2 calculator (non-ASE). Primarily used for Hessian calculation, rest is done through ASE"""
         data = {
             # N×3 float32 coords
             "coord": [atoms.get_positions().tolist()],
@@ -185,7 +259,11 @@ class ZMatrix:
     def get_atoms(self):
         return ZmatUtils.zmat_2_atoms(self.zmat, self.zmat_conn)
 
+    ## Function for energy ##############################################################################################################
+
     def get_energy(self, vars):
+        if not hasattr(self, "model"):
+            raise AttributeError(f"{self.__class__.__name__!r} has no attribute 'model'. Did you forget to run ZMatrix.attach_calculator()?")
         zmat = self._reconstruct_full_z_matrix(vars)
         atoms = ZmatUtils.zmat_2_atoms(zmat, self.zmat_conn)
         atoms.calc = self.calculator
@@ -196,7 +274,11 @@ class ZMatrix:
         print(energy)
         return energy
 
+    ## Functions related to calculating and converting forces ######################################################################################
+
     def get_forces(self):
+        if not hasattr(self, "model"):
+            raise AttributeError(f"{self.__class__.__name__!r} has no attribute 'model'. Did you forget to run ZMatrix.attach_calculator()?")
         atoms = ZmatUtils.zmat_2_atoms(self.zmat, self.zmat_conn)
         atoms.calc = self.calculator
         forces_cart_2d = atoms.get_forces(apply_constraint=False)
@@ -206,6 +288,8 @@ class ZMatrix:
         return forces
 
     def get_fd_forces(self):
+        if not hasattr(self, "calculator"):
+            raise AttributeError(f"{self.__class__.__name__!r} has no attribute 'calculator'. Did you forget to run ZMatrix.attach_calculator()?")
         atoms = ZmatUtils.zmat_2_atoms(self.zmat, self.zmat_conn)
         atoms.calc = self.calculator
         forces_cart_2d = atoms.get_forces(apply_constraint=False)
@@ -215,23 +299,16 @@ class ZMatrix:
         return forces
 
     def get_forces_cart(self):
+        if not hasattr(self, "calculator"):
+            raise AttributeError(f"{self.__class__.__name__!r} has no attribute 'calculator'. Did you forget to run ZMatrix.attach_calculator()?")
         atoms = ZmatUtils.zmat_2_atoms(self.zmat, self.zmat_conn)
         atoms.calc = self.calculator
         forces_cart_2d = atoms.get_forces(apply_constraint=False)
         forces_cart = np.array(forces_cart_2d).reshape(-1)
         return forces_cart
 
-    @staticmethod
-    def _get_temp_forces(zmat, zmat_conn, calculator):
-        atoms = ZmatUtils.zmat_2_atoms(zmat, zmat_conn)
-        atoms.calc = calculator
-        forces_cart_2d = atoms.get_forces(apply_constraint=False)
-        forces_cart = np.array(forces_cart_2d).reshape(-1, 1)
-        B = ZmatUtils.get_B_matrix(zmat, zmat_conn)
-        forces = (B @ forces_cart).flatten()
-        return forces
-
     def get_jacobian(self, vars):
+        """Tied to the unused ZMatrix.optimise() routine"""
         zmat = self._reconstruct_full_z_matrix(vars)
         atoms = ZmatUtils.zmat_2_atoms(zmat, self.zmat_conn)
         atoms.calc = self.calculator
@@ -249,7 +326,11 @@ class ZMatrix:
                 element *= np.pi/180
         return jacobian
 
+    ## Functions related to calculating and converting Hessian matrices ####################################################################
+
     def get_hess_cart(self):
+        if not hasattr(self, "model"):
+            raise AttributeError(f"{self.__class__.__name__!r} has no attribute 'model'. Did you forget to run ZMatrix.attach_calculator()?")
         if self.model == 'mace':
             H_cart = self.calculator.get_hessian(atoms = self.get_atoms())
             
@@ -263,13 +344,26 @@ class ZMatrix:
 
         N = H_cart.shape[1]
         return H_cart.reshape((3 * N, 3 * N))
-    
+
+
+    @staticmethod
+    def _get_temp_forces(zmat, zmat_conn, calculator):
+
+        atoms = ZmatUtils.zmat_2_atoms(zmat, zmat_conn)
+        atoms.calc = calculator
+        forces_cart_2d = atoms.get_forces(apply_constraint=False)
+        forces_cart = np.array(forces_cart_2d).reshape(-1, 1)
+        B = ZmatUtils.get_B_matrix(zmat, zmat_conn)
+        forces = (B @ forces_cart).flatten()
+        return forces
     
     def _hessian_column(self, idx, delta, valid_indices):
         """
         Central difference of *forces* with an explicit sign-flip so that
         H =  ∂²E / ∂qₖ ∂qⱼ
         """
+        if not hasattr(self, "calculator"):
+            raise AttributeError(f"{self.__class__.__name__!r} has no attribute 'calculator'. Did you forget to run ZMatrix.attach_calculator()?")
         i, j = valid_indices[idx]
     
         # +δ -------------------------------------------------------------
@@ -296,7 +390,7 @@ class ZMatrix:
     def get_full_fd_hessian(self, db, da, dt):
         """
         Symmetric (3N-6) × (3N-6) Hessian obtained from analytic forces,
-        computed serially.
+        computed serially. For testing only.
         """
         deltas = [db, da, dt]
     
@@ -326,6 +420,7 @@ class ZMatrix:
         
 
     def get_geom_fd_hessian(self, db, da, dt):
+        """Quasi-analytical Hessian from a finite-difference curvature tensor, for testing only"""
         H_cart = self.get_hess_cart()
         B = self._get_B_matrix()
         K = ZmatUtils.get_fd_curvature_tensor(self.zmat, self.zmat_conn, db, da, dt)
@@ -337,6 +432,7 @@ class ZMatrix:
         return H_min + H_res
     
     def get_hessian(self):
+        """Calculate fully analytical Hessian. Recommended for production use."""
         H_cart = self.get_hess_cart()
         B = self._get_B_matrix()
         K = self._get_K_tensor()
@@ -344,9 +440,16 @@ class ZMatrix:
 
         H_min = B @ H_cart @ np.transpose(B)
         H_res = -1 * np.einsum('isp,i->sp', K, F_cart)
-        return H_min + H_res
+        hessian = H_min + H_res
+
+        self.hessian = hessian
+        return hessian
+
+
+    ## Unused custom optimisation routine ###########################################################################################
 
     def callback(self, vars):
+        """Tied to the unused ZMatrix.optimise() routine"""
         self.iteration += 1
         zmat = self._reconstruct_full_z_matrix(vars)
         atoms = self.get_atoms()
@@ -354,7 +457,8 @@ class ZMatrix:
         PrintUtils.print_xyz(atoms, comment=self.name + str(self.iteration), fmt='%22.15f')
 
     def optimise(self):
-        print('WARNING: imcomplete/deprecated function. Will likely produce incorrect results')
+        """Imcomplete/deprecated optimisation routine. Will likely produce incorrect results. Use ZMatrix.optimise_ase() instead"""
+        print('WARNING: imcomplete/deprecated function. Will likely produce incorrect results. Use ZMatrix.optimise_ase() instead')
         result = minimize(
             self.get_energy,
             self.var_list,
@@ -371,11 +475,14 @@ class ZMatrix:
         self.var_list = self._extract_variables()  # Extract new variables
         return self.zmat, result.fun
 
+
+    ## Visualisation and optimisation ########################################################################
+
     def view_ase(self):
         from ase.visualize import view
         return view(self.get_atoms(), viewer = 'x3d')
     
-    def optimise_ase(self, trajectory = None, mode = 'linesearch', fmax = 1e-5):
+    def optimise_ase(self, trajectory = None, mode = 'linesearch', fmax = 1e-5, calc_hess = False):
         print('Initialising minimisation routine')
         start_tot = time.perf_counter()
         print('Model used:', self.calculator, self.model_size)
@@ -428,8 +535,7 @@ class ZMatrix:
         print('======================================================================================')
         PrintUtils.print_zmat(self.zmat, self.zmat_conn, self.constraints)
         print('======================================================================================')
-        self.b_matrix = self._get_B_matrix()  # Update B-matrix
-        forces = (self.b_matrix @ forces_cart).flatten()
+        forces = self.get_forces()
 
         self.var_list = self._extract_variables()  # Extract new variables
 
@@ -441,12 +547,76 @@ class ZMatrix:
         print('======================================================================================')
         PrintUtils.print_forces(forces, self.zmat)
         print('======================================================================================')
+        if calc_hess == True:
+            print('Calculating Hessian matrix as calc_hess is set to True...')
+            print('Calculated Hessian:')
+            hessian = self.get_hessian()
+            PrintUtils.print_hessian(hessian, self.zmat, constraints = self.constraints, block_size = 5)
+            print('======================================================================================')
         print('Routine finished successfully.')
 
+        self.forces = forces
+        self.energy = energy
+
+        
         end_tot = time.perf_counter()
         wall_tot = end_tot - start_tot
         wall_min = end_min - start_min
         
         print(f'Total wall time = {wall_tot:.6f} seconds')
         print(f'Minimisation wall time = {wall_min:.6f} seconds')
+        
         return zmat_minimised, energy, forces
+
+    ## Functions for saving output ################################################################################
+
+    def dump_json(self, filename = None):
+        """
+        Save all core data to a JSON file.
+        """
+        if filename is None:
+            filename = f'{self.name}_ZMatrix.json'
+        state = {
+            "zmat":      self.zmat,
+            "zmat_conn": self.zmat_conn,
+            "constraints": {
+                "bonds":     [[idx, val] for idx, val in self.constraints.bonds],
+                "angles":    [[idx, val] for idx, val in self.constraints.angles],
+                "dihedrals": [[idx, val] for idx, val in self.constraints.dihedrals],
+            },
+            "energy":  self.energy if self.energy is not None else None,
+            "forces":  self.forces.tolist() if self.forces is not None else None,
+            "hessian": self.hessian.tolist() if self.hessian is not None else None,
+        }
+        with open(filename, "w") as f:
+            json.dump(state, f, indent=2)
+
+
+    def save_pickle(self, filename: str):
+        """Binary dump of the entire instance (fast & automatic)."""
+        with open(filename, "wb") as f:
+            pickle.dump(self, f)
+
+
+    def save_gaussian_com(self, filename, preamble):
+        '''
+        Saves the current geometry as a gaussian .com file. 
+        Preamble should be a docstring containing gaussian settings (%mem, %nprocshared etc) 
+        '''
+        # Capture the printed Z-matrix
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            PrintUtils.print_zmat(self.zmat, self.zmat_conn, self.constraints)
+        zmat_text = buf.getvalue()
+
+        # Write preamble + zmat
+        try:
+            with open(filename, 'w', encoding='utf-8') as f:
+                f.write(preamble)
+                if not preamble.endswith('\n'):
+                    f.write('\n')
+                f.write(zmat_text)
+                if not zmat_text.endswith('\n'):
+                    f.write('\n')
+        except IOError as e:
+            print(f"Error writing to {filename}: {e}")

@@ -1,5 +1,6 @@
 from ase import Atoms
-from constraints import Constraints
+from .constraints import Constraints
+import numpy as np
 
 class PrintUtils:
     @staticmethod
@@ -99,3 +100,80 @@ class PrintUtils:
                 force_angle = forces[3 * i - 5]
                 force_torsion = forces[3 * i - 4]
                 print('%-2s %s %s %s' % (s_counted, fmt % force_bond, fmt % force_angle, fmt % force_torsion))
+
+    @staticmethod
+    def print_hessian(hessian, zmat, constraints=None, block_size=5):
+        """
+        Print the lower‐triangular part of a Hessian matrix, but reorder so that
+        any DOFs listed in constraints appear at the end.  Variable names are
+        built internally from `zmat`.  Columns are delimited by two spaces,
+        and the first digit of every number (not the sign) lines up in the same
+        column.
+        """
+        H = np.asarray(hessian)
+        m = H.shape[0]
+        if H.shape[1] != m:
+            raise ValueError("Hessian must be square")
+    
+        # default empty constraints
+        if constraints is None:
+            class _C:
+                bonds = []
+                angles = []
+                dihedrals = []
+            constraints = _C()
+    
+        # 1) build the original variable‐name list in zmat order
+        orig_names = []
+        n = len(zmat)
+        for i in range(1, n):
+            if zmat[i][1] is not None:
+                orig_names.append(f"bnd{i+1}")
+            if i >= 2 and zmat[i][2] is not None:
+                orig_names.append(f"ang{i+1}")
+            if i >= 3 and zmat[i][3] is not None:
+                orig_names.append(f"dih{i+1}")
+    
+        if len(orig_names) != m:
+            raise ValueError(f"zmat yields {len(orig_names)} DOFs, but Hessian is {m}×{m}")
+    
+        # 2) collect the constant DOFs
+        const_names = [f"bnd{idx+1}" for idx, _ in constraints.bonds] + \
+                      [f"ang{idx+1}" for idx, _ in constraints.angles] + \
+                      [f"dih{idx+1}" for idx, _ in constraints.dihedrals]
+    
+        # 3) split into non‐const then const
+        nonconst = [nm for nm in orig_names if nm not in const_names]
+        new_order = nonconst + const_names
+    
+        # 4) permute H to match the new order
+        idx_map = [orig_names.index(nm) for nm in new_order]
+        H2 = H[np.ix_(idx_map, idx_map)]
+    
+        # 5) determine field widths so digits align at col 1
+        example = f"{0.0:.8E}"         # e.g. "0.00000000E+00" (14 chars)
+        digit_width = len(example)     # 14
+        fw = digit_width + 1           # reserve 1 char for sign or leading space -> 15
+    
+        # 6) print in blocks of columns
+        for block_start in range(0, m, block_size):
+            block_end = min(block_start + block_size, m)
+    
+            # header row
+            print(" " * (fw + 1), end=" ")
+            for j in range(block_start, block_end):
+                print(f"{new_order[j]:{fw}s}", end=" ")
+            print()
+    
+            # data rows
+            for i in range(block_start, m):
+                # row label
+                print(f"{new_order[i]:{fw}s}", end=" ")
+                for j in range(block_start, block_end):
+                    val = H2[i, j]
+                    # build abs‐value string
+                    sig = "-" if val < 0 else " "
+                    body = f"{abs(val):.8E}"       # always starts with a digit
+                    entry = (sig + body).ljust(fw)  # pad on right
+                    print(entry, end=" ")
+                print()
