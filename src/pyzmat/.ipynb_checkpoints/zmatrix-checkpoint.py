@@ -20,6 +20,8 @@ import json
 
 from typing import Tuple, Optional
 
+import io
+from contextlib import redirect_stdout
 
 class ZMatrix:
 
@@ -549,8 +551,8 @@ class ZMatrix:
         print('======================================================================================')
         if calc_hess == True:
             print('Calculating Hessian matrix as calc_hess is set to True...')
-            print('Calculated Hessian:')
             hessian = self.get_hessian()
+            print('Calculated Hessian:')
             PrintUtils.print_hessian(hessian, self.zmat, constraints = self.constraints, block_size = 5)
             print('======================================================================================')
         print('Routine finished successfully.')

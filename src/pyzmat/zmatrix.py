@@ -20,6 +20,8 @@ import json
 
 from typing import Tuple, Optional
 
+import io
+from contextlib import redirect_stdout
 
 class ZMatrix:
 

@@ -1,6 +1,7 @@
 from ase import Atoms
 from .constraints import Constraints
 import numpy as np
+import io
 
 class PrintUtils:
     @staticmethod
