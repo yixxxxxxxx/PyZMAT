@@ -2,6 +2,8 @@ import numpy as np
 from ase import Atoms
 import copy
 
+from ase.neighborlist import natural_cutoffs, neighbor_list
+
 class ZmatUtils:
     """
     Contains functions concerning the conversion of structures between cartesian and internal coordinates, as well as the first and second derivatives of cartesian coordinates w.r.t. internal coordinates.
@@ -16,6 +18,87 @@ class ZmatUtils:
             raise TypeError("Inputs to kronecker_delta must be integers.")
         return 1 if i == j else 0
 
+    @staticmethod
+    def get_zmat_def(atoms, cutoff_scale=1.2):
+        """
+        Generate a possibly sensible zmat definition from cartesian coordinates. Roughly based on ChatGPT's interpretation of O Weser's Chemcoord paper.
+        Very under tested: use at own risk.
+        """
+        
+        # Build connectivity graph B
+        cutoffs = natural_cutoffs(atoms)
+        cutoffs = [c * cutoff_scale for c in cutoffs]
+        i_list, j_list = neighbor_list('ij', atoms, cutoff=cutoffs)
+        N = len(atoms)
+        B = {i: set() for i in range(N)}
+        for i, j in zip(i_list, j_list):
+            if i != j:
+                B[i].add(j)
+                B[j].add(i)
+    
+        # Atom closest to centroid
+        coords = atoms.get_positions()
+        centroid = coords.mean(axis=0)
+        origin = int(np.argmin(np.linalg.norm(coords - centroid, axis=1)))
+    
+        # Initialize
+        R = {origin: {'b': None, 'a': None, 'd': None}}
+        visited = {origin}
+        parent = {nbr: origin for nbr in B[origin]}
+        work = {nbr: B[nbr] - visited for nbr in B[origin]}
+    
+        def max_valent(neigh):
+            return max(neigh, key=lambda x: len(B[x]))
+    
+        # Main loop
+        while work:
+            new_work = {}
+            # Sort by valency of frontier
+            for i in sorted(work, key=lambda x: len(B[x])):
+                if i in visited:
+                    continue
+                b = parent[i]
+                keys = list(R.keys())
+                # Case: b in first three entries of R
+                if b in keys[:3]:
+                    if len(R) == 1:
+                        a = None; d = None
+                    elif len(R) == 2:
+                        a = max_valent(B[b] & set(R.keys())); d = None
+                    else:
+                        # len(R) >= 3
+                        if parent.get(b) is not None:
+                            a = parent[b]
+                        else:
+                            a = max_valent(B[b] & set(R.keys()))
+                        # determine d
+                        if parent.get(a) is not None and parent[a] not in {b, a}:
+                            d = parent[a]
+                        else:
+                            neighbors_a = (B[a] & set(R.keys())) - {b, a}
+                            if neighbors_a:
+                                d = max_valent(neighbors_a)
+                            else:
+                                d = max_valent((B[b] & set(R.keys())) - {b, a})
+                else:
+                    # fallback
+                    a = R[b]['b']; d = R[b]['a']
+    
+                R[i] = {'b': b, 'a': a, 'd': d}
+                visited.add(i)
+                # expand frontier
+                for j in sorted(work[i], key=lambda x: len(B[x])):
+                    if j not in visited:
+                        new_work[j] = B[j] - visited
+                        parent[j] = i
+            work = new_work
+    
+        # Construct list in insertion order
+        zmat_def = []
+        for atom, refs in R.items():
+            zmat_def.append((atom, refs['b'], refs['a'], refs['d']))
+        return zmat_def
+    
     @staticmethod
     def atoms_2_zmat_init(atoms, zmat_def):
         """
