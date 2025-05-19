@@ -52,6 +52,14 @@ class ZMatrix:
     def __repr__(self):
         return f"ZMatrix({len(self.zmat_conn)} atoms, {self.constraints})"
 
+    ## Class methods for loading from various file types #########################################################################################################
+
+    @classmethod
+    def load_from_gaussian(cls, filename: str) -> "ZMatrix":
+        zmat, zmat_conn, constraints = ParseUtils.parse_gaussian_input(filename)
+        obj = cls(zmat = zmat, zmat_conn = zmat_conn, name = filename)
+        return obj
+        
     @classmethod
     def load_json(cls, filename: str) -> "ZMatrix":
         """
@@ -62,11 +70,9 @@ class ZMatrix:
         with open(filename, "r") as f:
             state = json.load(f)
 
-        # rebuild arrays
         zmat      = [list(row) for row in state["zmat"]]
         zmat_conn = [tuple(item) for item in state["zmat_conn"]]
 
-        # rebuild Constraints object
         cons = state["constraints"]
         constraints = Constraints(
             bonds     = [tuple(item) for item in cons["bonds"]],
@@ -74,13 +80,11 @@ class ZMatrix:
             dihedrals = [tuple(item) for item in cons["dihedrals"]],
         )
 
-        # call constructor
         obj = cls(zmat = zmat,
                   zmat_conn = zmat_conn,
                   constraints = constraints,
                   name = state.get("name"))
 
-        # attach stored post‐init attributes if they exist
         if state.get("forces") is not None:
             obj.forces = np.array(state["forces"], dtype = float)
         if state.get("energy") is not None:
@@ -89,7 +93,7 @@ class ZMatrix:
             obj.hessian = np.array(state["hessian"], dtype = float)
 
         return obj
-
+    
     @classmethod
     def load_pickle(cls, filename: str) -> "ZMatrix":
         """Load an instance back (only for trusted files!)."""
