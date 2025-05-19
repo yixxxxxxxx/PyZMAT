@@ -21,82 +21,146 @@ class ZmatUtils:
     @staticmethod
     def get_zmat_def(atoms, cutoff_scale=1.2):
         """
-        Generate a possibly sensible zmat definition from cartesian coordinates. Roughly based on ChatGPT's interpretation of O Weser's Chemcoord paper.
+        Generate a possibly sensible zmat definition from cartesian coordinates. 
+        Based on: O. Weser, B. Hein-Janke, R. A. Mata, J. Comput. Chem. 2023, 44(5), 710. https://doi.org/10.1002/jcc.27029
         Very under tested: use at own risk.
+    
+        Input: 
+        1. An ASE Atoms object
+        2. (Optional) A scale factor for ASE covalent cutoffs
+    
+        Returns:
+        A list of tuples comprising
+        (i a b d) 
+        where each is an index from atoms
         """
-        
-        # Build connectivity graph B
-        cutoffs = natural_cutoffs(atoms)
-        cutoffs = [c * cutoff_scale for c in cutoffs]
-        i_list, j_list = neighbor_list('ij', atoms, cutoff=cutoffs)
-        N = len(atoms)
-        B = {i: set() for i in range(N)}
-        for i, j in zip(i_list, j_list):
-            if i != j:
-                B[i].add(j)
-                B[j].add(i)
     
-        # Atom closest to centroid
-        coords = atoms.get_positions()
-        centroid = coords.mean(axis=0)
-        origin = int(np.argmin(np.linalg.norm(coords - centroid, axis=1)))
-    
-        # Initialize
-        R = {origin: {'b': None, 'a': None, 'd': None}}
-        visited = {origin}
-        parent = {nbr: origin for nbr in B[origin]}
-        work = {nbr: B[nbr] - visited for nbr in B[origin]}
-    
+        # Function to find the neighbor with the maximum valency
         def max_valent(neigh):
-            return max(neigh, key=lambda x: len(B[x]))
+            return max(neigh, key=lambda x: len(conn_graph[x]))
+        
+        # Get covalent cutoffs for each atom in the list
+        cutoffs=natural_cutoffs(atoms)
+        cutoffs=[c * cutoff_scale for c in cutoffs]
+    
+        # Get a list of all bonded neighbors i and j
+        i_list, j_list = neighbor_list('ij', atoms, cutoff=cutoffs,self_interaction=False)
+        natms=len(atoms)
+    
+        # Define connectivity graph
+        conn_graph={i: set() for i in range(0,natms)}       # Initialise dictionary of sets
+        for i, j in zip(i_list, j_list):
+            if (i != j):                                    # Redundant since ASE's neighbor_list avoids self interaction, but just in case
+                conn_graph[i].add(j)
+                conn_graph[j].add(i)
+    
+        # The i-th entry in conn_graph is thus the set of atoms j bonded to i
+    
+        # Find atom closest to centroid that is NOT HYDROGEN
+        coords=atoms.get_positions()
+        centroid=coords.mean(axis=0)
+        elements=atoms.get_chemical_symbols()
+        indices=np.arange(0,len(elements))
+        distances=np.linalg.norm(coords - centroid, axis=1)
+    
+        zipped = list(zip(elements, indices, distances))
+        zipped_sorted = sorted(zipped, key=lambda x: x[2])
+        elements_sorted, indices_sorted, distances_sorted = zip(*zipped_sorted)
+    
+        for i in range(len(distances_sorted)):
+            if (elements_sorted[i]!='H'):
+                origin=indices_sorted[i]
+                break
+        
+        # Initialize dictionaries (All indices are based on the input list of atoms)
+        # Zmatrix being constructed
+        zmatrix={   
+                origin: {'b': None, 'a': None, 'd': None}           
+                }
+        # Atoms already visited
+        visited={origin}
+    
+        # Children to the current parent: origin
+        parent={nbr: origin for nbr in conn_graph[origin]}
+    
+        # Neighbors to the current set of children, EXCLUDING visited sites
+        work={nbr: conn_graph[nbr] - visited for nbr in conn_graph[origin]}
     
         # Main loop
-        while work:
+        while work:     # So long as work is not empty, there is work to be done
             new_work = {}
-            # Sort by valency of frontier
-            for i in sorted(work, key=lambda x: len(B[x])):
-                if i in visited:
+    
+            # To expand the Zmatrix frontier, we prioritize neighbor's with high valency
+            for i in sorted(work, key=lambda x: len(conn_graph[x]), reverse=True):
+    
+                if (i in visited):  # If neighbor has been visited then skip
                     continue
-                b = parent[i]
-                keys = list(R.keys())
-                # Case: b in first three entries of R
-                if b in keys[:3]:
-                    if len(R) == 1:
-                        a = None; d = None
-                    elif len(R) == 2:
-                        a = max_valent(B[b] & set(R.keys())); d = None
-                    else:
-                        # len(R) >= 3
-                        if parent.get(b) is not None:
-                            a = parent[b]
+                
+                # BOND: Current parent
+                b=parent[i]         
+    
+                # Case: b in first three entries of zmatrix 
+                # BIT: I think this is relevant to the 'else' case when checking len(zmat)
+                keys=list(zmatrix.keys())
+                if (b in keys[:3]):
+                    if (len(zmatrix)==1):       # Only 1 atom exist in Zmat, i is the second atom
+                        a=None
+                        d=None
+                        # Only bond; no angle or torsion
+    
+                    elif (len(zmatrix)==2):     # Only 2 atoms exist in Zmat, i is the third atom
+                        a=max_valent(conn_graph[b] & set(zmatrix.keys()))       
+                        d=None
+                        # BIT: 
+                        # Technically at this point there is only 1 choice for the angle atom
+                        # The remaining atom bonded to b and existing in the Zmat
+                        # Should not need to check max_valency in this case
+    
+                    else:   # At least 3 atoms exist in the Zmatrix
+                        # Make the angle the parent of the bond (should be the case)
+                        # Else, make it the highest valency neighbor-to-b already defined
+                        if (parent.get(b) is not None): 
+                            a=parent[b]         
                         else:
-                            a = max_valent(B[b] & set(R.keys()))
-                        # determine d
-                        if parent.get(a) is not None and parent[a] not in {b, a}:
-                            d = parent[a]
+                            a=max_valent(conn_graph[b] & set(zmatrix.keys()))
+    
+                        # Make the dihedral the parent of the angle, if already defined and not b/a
+                        # Else, make it the highest valency neighbor-to-a or b, that have already been defined but are not b or a
+                        if ((parent.get(a) is not None)and(parent[a] not in {b, a})):
+                            d=parent[a]
                         else:
-                            neighbors_a = (B[a] & set(R.keys())) - {b, a}
-                            if neighbors_a:
-                                d = max_valent(neighbors_a)
+                            neighbors_a=(conn_graph[a] & set(zmatrix.keys())) - {b, a}
+                            if (neighbors_a):
+                                d=max_valent(neighbors_a)   
                             else:
-                                d = max_valent((B[b] & set(R.keys())) - {b, a})
+                                d=max_valent((conn_graph[b] & set(zmatrix.keys())) - {b, a})
                 else:
                     # fallback
-                    a = R[b]['b']; d = R[b]['a']
+                    a=zmatrix[b]['b']
+                    d=zmatrix[b]['a']
     
-                R[i] = {'b': b, 'a': a, 'd': d}
+                # Add to Zmatrix
+                zmatrix[i]={'b': b, 'a': a, 'd': d}
+    
+                # Update the list of visited atoms
                 visited.add(i)
-                # expand frontier
-                for j in sorted(work[i], key=lambda x: len(B[x])):
-                    if j not in visited:
-                        new_work[j] = B[j] - visited
-                        parent[j] = i
-            work = new_work
+    
+                # Expand frontier
+                for j in sorted(work[i], key=lambda x: len(conn_graph[x]), reverse=True):
+                    if (j not in visited):
+                        new_work[j]=conn_graph[j] - visited
+                        parent[j]=i
+    
+            # Update work
+            work=new_work
+    
+        # MAIN LOOP END
     
         # Construct list in insertion order
         zmat_def = []
-        for atom, refs in R.items():
+        for atom, refs in zmatrix.items():
             zmat_def.append((atom, refs['b'], refs['a'], refs['d']))
+    
         return zmat_def
     
     @staticmethod
