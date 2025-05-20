@@ -33,11 +33,11 @@ class ZMatrix:
     
 
         # Pretty unused, ignore these
-        self.con_dict = self._find_constraint_values()
-        self.con_ids = list(self.con_dict.keys())
-        self._apply_constraints()
-        self.var_ids = self._find_var_ids()  # Find variable indices
-        self.var_list = self._extract_variables()  # Extract initial variables
+#        self.con_dict = self._find_constraint_values()
+#        self.con_ids = list(self.con_dict.keys())
+#        self._apply_constraints()
+#        self.var_ids = self._find_var_ids()  # Find variable indices
+#        self.var_list = self._extract_variables()  # Extract initial variables
 
 
         
@@ -57,7 +57,7 @@ class ZMatrix:
     @classmethod
     def load_from_gaussian(cls, filename: str) -> "ZMatrix":
         zmat, zmat_conn, constraints = ParseUtils.parse_gaussian_input(filename)
-        obj = cls(zmat = zmat, zmat_conn = zmat_conn, name = filename)
+        obj = cls(zmat = zmat, zmat_conn = zmat_conn, constraints = constraints, name = filename)
         return obj
         
     @classmethod
@@ -128,76 +128,76 @@ class ZMatrix:
         self.model = model
 
 
-    ## Some helper functions for the unused custom optimisation routine ###########################################################################################
-
-    def _find_constraint_values(self):
-        """Tied to the unused ZMatrix.optimise() routine"""
-        con_dict = {}
-        # Bonds: global index = index * 3
-        for index, val in self.constraints.bonds:
-            global_index = index * 3
-            if val is None:
-                val = self._get_value_by_index(global_index)
-            con_dict[global_index] = val
-        # Angles: global index = index * 3 + 1
-        for index, val in self.constraints.angles:
-            global_index = index * 3 + 1
-            if val is None:
-                val = self._get_value_by_index(global_index)
-            con_dict[global_index] = val
-        # Dihedrals: global index = index * 3 + 2
-        for index, val in self.constraints.dihedrals:
-            global_index = index * 3 + 2
-            if val is None:
-                val = self._get_value_by_index(global_index)
-            con_dict[global_index] = val
-        return con_dict
-
-    def _apply_constraints(self):
-        """Tied to the unused ZMatrix.optimise() routine"""
-        for global_index, value in self.con_dict.items():
-            atom_index = global_index // 3
-            coord_index = (global_index % 3) + 1
-            self.zmat[atom_index][coord_index] = value
-
-    def _find_var_ids(self):
-        """Tied to the unused ZMatrix.optimise() routine"""
-        total_vars = 3 * len(self.zmat)
-        var_ids = [i for i in range(total_vars) if i not in self.con_ids and self._get_value_by_index(i) is not None]
-        return var_ids
-
-    def _get_value_by_index(self, index):
-        """Tied to the unused ZMatrix.optimise() routine"""
-        atom_idx = index // 3
-        coord_idx = index % 3
-        return self.zmat[atom_idx][coord_idx + 1]
-
-    def _extract_variables(self):
-        """Tied to the unused ZMatrix.optimise() routine"""
-        all_values = [coord for row in self.zmat for coord in row[1:]]
-        all_values = np.array(all_values)
-        return all_values[self.var_ids]
-
-    def _reconstruct_full_z_matrix(self, vars):
-        """Tied to the unused ZMatrix.optimise() routine"""
-        full_values = np.array([coord for row in self.zmat for coord in row[1:]])
-        var_id = 0
-        for i in range(len(full_values)):
-            if i in self.var_ids:
-                full_values[i] = vars[var_id]
-                var_id += 1
-            elif i in self.con_ids:
-                full_values[i] = self.con_dict[i]
-        reconstructed_zmat = []
-        for i, (atom, bond, angle, dihedral) in enumerate(self.zmat):
-            bond_val, angle_val, dihedral_val = full_values[i * 3:(i + 1) * 3]
-            new_values = [
-                bond_val if bond is not None else None,
-                angle_val if angle is not None else None,
-                dihedral_val if dihedral is not None else None
-            ]
-            reconstructed_zmat.append((atom, *new_values))
-        return reconstructed_zmat
+#    ## Some helper functions for the unused custom optimisation routine ############################################################################################
+#
+#    def _find_constraint_values(self):
+#        """Tied to the unused ZMatrix.optimise() routine"""
+#        con_dict = {}
+#        # Bonds: global index = index * 3
+#        for index, val in self.constraints.bonds:
+#            global_index = index * 3
+#            if val is None:
+#                val = self._get_value_by_index(global_index)
+#            con_dict[global_index] = val
+#        # Angles: global index = index * 3 + 1
+#        for index, val in self.constraints.angles:
+#            global_index = index * 3 + 1
+#            if val is None:
+#                val = self._get_value_by_index(global_index)
+#            con_dict[global_index] = val
+#        # Dihedrals: global index = index * 3 + 2
+#        for index, val in self.constraints.dihedrals:
+#            global_index = index * 3 + 2
+#            if val is None:
+#                val = self._get_value_by_index(global_index)
+#            con_dict[global_index] = val
+#        return con_dict
+#
+#    def _apply_constraints(self):
+#        """Tied to the unused ZMatrix.optimise() routine"""
+#        for global_index, value in self.con_dict.items():
+#            atom_index = global_index // 3
+#            coord_index = (global_index % 3) + 1
+#            self.zmat[atom_index][coord_index] = value
+#
+#    def _find_var_ids(self):
+#        """Tied to the unused ZMatrix.optimise() routine"""
+#        total_vars = 3 * len(self.zmat)
+#        var_ids = [i for i in range(total_vars) if i not in self.con_ids and self._get_value_by_index(i) is not None]
+#        return var_ids
+#
+#    def _get_value_by_index(self, index):
+#        """Tied to the unused ZMatrix.optimise() routine"""
+#        atom_idx = index // 3
+#        coord_idx = index % 3
+#        return self.zmat[atom_idx][coord_idx + 1]
+#
+#    def _extract_variables(self):
+#        """Tied to the unused ZMatrix.optimise() routine"""
+#        all_values = [coord for row in self.zmat for coord in row[1:]]
+#        all_values = np.array(all_values)
+#        return all_values[self.var_ids]
+#
+#    def _reconstruct_full_z_matrix(self, vars):
+#        """Tied to the unused ZMatrix.optimise() routine"""
+#        full_values = np.array([coord for row in self.zmat for coord in row[1:]])
+#        var_id = 0
+#        for i in range(len(full_values)):
+#            if i in self.var_ids:
+#                full_values[i] = vars[var_id]
+#                var_id += 1
+#            elif i in self.con_ids:
+#                full_values[i] = self.con_dict[i]
+#        reconstructed_zmat = []
+#        for i, (atom, bond, angle, dihedral) in enumerate(self.zmat):
+#            bond_val, angle_val, dihedral_val = full_values[i * 3:(i + 1) * 3]
+#            new_values = [
+#                bond_val if bond is not None else None,
+#                angle_val if angle is not None else None,
+#                dihedral_val if dihedral is not None else None
+#            ]
+#            reconstructed_zmat.append((atom, *new_values))
+#        return reconstructed_zmat
 
     ## Calculate tensors of coordinate derivatives from pyzmat.ZmatUtils #######################################################
 

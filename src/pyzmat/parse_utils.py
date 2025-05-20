@@ -246,8 +246,8 @@ class ParseUtils:
     def parse_gaussian_fchk(filename, zmat_conn):
         """
         Read a Gaussian .fchk file and extract:
-          - optimized Cartesian coords → ASE Atoms
-          - internal forces (converted to eV/Å or eV/deg)
+          - optimized Cartesian coords to ASE Atoms
+          - internal forces (converted to eV/A or eV/deg)
           - total energy (eV)
         Returns (zmat, forces, energy).
         """
@@ -311,7 +311,7 @@ class ParseUtils:
         # build Atoms and back‐convert to Z‐matrix
         symbols = [entry[0] for entry in zmat_conn]
         atoms = Atoms(symbols=symbols, positions=positions)
-        zmat, _ = ZmatUtils.atoms_2_zmat(atoms, zmat_conn)
+        zmat = ZmatUtils.atoms_2_zmat(atoms, zmat_conn)
 
         return zmat, forces_si, energy
 
