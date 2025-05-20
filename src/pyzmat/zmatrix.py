@@ -543,8 +543,6 @@ class ZMatrix:
         print('======================================================================================')
         forces = self.get_forces()
 
-        self.var_list = self._extract_variables()  # Extract new variables
-
         print('Optimised cartesian coordinates:')        
         print('======================================================================================')
         PrintUtils.print_xyz(atoms_minimised, comment='ASE minimised ' + self.name, fmt='%22.15f')
