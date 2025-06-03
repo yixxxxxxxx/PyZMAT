@@ -23,13 +23,16 @@ from typing import Tuple, Optional
 import io
 from contextlib import redirect_stdout
 
+import warnings
+warnings.simplefilter("ignore", category=FutureWarning)
+
 class ZMatrix:
 
     def __init__(self, zmat, zmat_conn, constraints = None, name = None, energy = None, forces = None, hessian = None):
         self.name = name if name else "unnamed molecule"
         self.zmat = zmat
         self.zmat_conn = zmat_conn  # Each connectivity is now (symbol, bond, angle, dihedral)
-        self.constraints = constraints if constraints else Constraints()  # Default to empty constraints
+        self._constraints = constraints if constraints else Constraints()  # Default to empty constraints
     
 
         # Pretty unused, ignore these
@@ -105,6 +108,15 @@ class ZMatrix:
             raise TypeError("Pickle file did not contain a ZMatrix instance")
         return obj
 
+    @property
+    def constraints(self):
+        return self._constraints
+
+    @constraints.setter
+    def constraints(self, value):
+        self._constraints = value
+        self.ase_constraints = self._get_ase_constraints()
+
     def attach_calculator(self, model, model_size = 'large', gpu = False):
         """Attach an MLIP as an ASE calculator to the ZMatrix object. Only supports MACE-off23 ('mace') and AIMNet2 ('aimnet2') at the moment."""
         if model not in ['mace', 'aimnet2']:
@@ -126,6 +138,9 @@ class ZMatrix:
             self.model_size = 'NaN'
 
         self.model = model
+
+    
+    
 
 
 #    ## Some helper functions for the unused custom optimisation routine ############################################################################################
@@ -214,21 +229,21 @@ class ZMatrix:
     def _get_ase_constraints(self):
         # Build ASE constraints using the provided (or default) values.
         bonds = []
-        for index, val in self.constraints.bonds:
+        for index, val in self._constraints.bonds:
             bond_length = val if val is not None else self.zmat[index][1]
             # For bonds, use connectivity index from zmat_conn: (symbol, bond, angle, dihedral)
             j = self.zmat_conn[index][1]
             bond = [bond_length, [index, j]]
             bonds.append(bond)
         angles = []
-        for index, val in self.constraints.angles:
+        for index, val in self._constraints.angles:
             bond_angle = val if val is not None else self.zmat[index][2]
             j = self.zmat_conn[index][1]
             k = self.zmat_conn[index][2]
             angle = [bond_angle, [index, j, k]]
             angles.append(angle)
         dihedrals = []
-        for index, val in self.constraints.dihedrals:
+        for index, val in self._constraints.dihedrals:
             dihedral_angle = val if val is not None else self.zmat[index][3]
             j = self.zmat_conn[index][1]
             k = self.zmat_conn[index][2]
@@ -267,19 +282,27 @@ class ZMatrix:
 
     ## Function for energy ##############################################################################################################
 
-    def get_energy(self, vars):
+    #def get_energy(self, vars):
+    #    if not hasattr(self, "model"):
+    #       raise AttributeError(f"{self.__class__.__name__!r} has no attribute 'model'. Did you forget to run ZMatrix.attach_calculator()?")
+    #    zmat = self._reconstruct_full_z_matrix(vars)
+    #   atoms = ZmatUtils.zmat_2_atoms(zmat, self.zmat_conn)
+    #    atoms.calc = self.calculator
+    #    energy = atoms.get_potential_energy()
+    #    self.iteration += 1
+    #    print('Iteration', self.iteration)
+    #    PrintUtils.print_xyz(atoms, comment='', fmt='%22.15f')
+    #    print(energy)
+    #    return energy
+
+    def get_energy(self):
         if not hasattr(self, "model"):
-            raise AttributeError(f"{self.__class__.__name__!r} has no attribute 'model'. Did you forget to run ZMatrix.attach_calculator()?")
-        zmat = self._reconstruct_full_z_matrix(vars)
-        atoms = ZmatUtils.zmat_2_atoms(zmat, self.zmat_conn)
+           raise AttributeError(f"{self.__class__.__name__!r} has no attribute 'model'. Did you forget to run ZMatrix.attach_calculator()?")
+        atoms = self.get_atoms()
         atoms.calc = self.calculator
         energy = atoms.get_potential_energy()
-        self.iteration += 1
-        print('Iteration', self.iteration)
-        PrintUtils.print_xyz(atoms, comment='', fmt='%22.15f')
-        print(energy)
         return energy
-
+        
     ## Functions related to calculating and converting forces ######################################################################################
 
     def get_forces(self):

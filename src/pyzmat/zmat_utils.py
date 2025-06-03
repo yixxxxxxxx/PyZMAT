@@ -773,4 +773,4 @@ class ZmatUtils:
         atoms1 = ZmatUtils.zmat_2_atoms(zmat1, zmat_conn)
         atoms2 = ZmatUtils.zmat_2_atoms(zmat2, zmat_conn)
 
-        return calculate_rmsd(atoms1, atoms2)
+        return ZmatUtils.calculate_rmsd(atoms1, atoms2)
