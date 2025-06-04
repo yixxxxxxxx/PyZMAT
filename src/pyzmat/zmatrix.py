@@ -117,6 +117,10 @@ class ZMatrix:
         self._constraints = value
         self.ase_constraints = self._get_ase_constraints()
 
+    def clear_constraints(self):
+        self._constraints = Constraints()
+        self.ase_constraints = self._get_ase_constraints()
+
     def attach_calculator(self, model, model_size = 'large', gpu = False):
         """Attach an MLIP as an ASE calculator to the ZMatrix object. Only supports MACE-off23 ('mace') and AIMNet2 ('aimnet2') at the moment."""
         if model not in ['mace', 'aimnet2']:
@@ -625,7 +629,7 @@ class ZMatrix:
             pickle.dump(self, f)
 
 
-    def save_gaussian_com(self, filename, preamble):
+    def save_gaussian_com(self, filename, preamble, postamble = None):
         '''
         Saves the current geometry as a gaussian .com file. 
         Preamble should be a docstring containing gaussian settings (%mem, %nprocshared etc) 
@@ -636,7 +640,7 @@ class ZMatrix:
             PrintUtils.print_zmat(self.zmat, self.zmat_conn, self.constraints)
         zmat_text = buf.getvalue()
 
-        # Write preamble + zmat
+        # Write preamble + zmat + postamble
         try:
             with open(filename, 'w', encoding='utf-8') as f:
                 f.write(preamble)
@@ -645,5 +649,9 @@ class ZMatrix:
                 f.write(zmat_text)
                 if not zmat_text.endswith('\n'):
                     f.write('\n')
+                if postamble:
+                    f.write(postamble)
+                if not zmat_text.endswith('\n'):
+                    f.write('\n') 
         except IOError as e:
             print(f"Error writing to {filename}: {e}")
