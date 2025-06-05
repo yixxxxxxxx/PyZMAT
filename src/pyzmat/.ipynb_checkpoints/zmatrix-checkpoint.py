@@ -644,6 +644,8 @@ class ZMatrix:
         try:
             with open(filename, 'w', encoding='utf-8') as f:
                 f.write(preamble)
+                if not preamble.endswith('\n'):
+                    f.write('\n')
                 f.write(zmat_text)
                 if not zmat_text.endswith('\n'):
                     f.write('\n')
