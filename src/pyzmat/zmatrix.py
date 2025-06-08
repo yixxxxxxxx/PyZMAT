@@ -64,7 +64,7 @@ class ZMatrix:
         return obj
         
     @classmethod
-    def load_json(cls, filename: str) -> "ZMatrix":
+    def load_json(cls, filename: str, load_hessian = False) -> "ZMatrix":
         """
         Load a ZMatrix object (and its last forces/energy/hessian, if present)
         from a JSON file produced by dump_json().
@@ -92,8 +92,9 @@ class ZMatrix:
             obj.forces = np.array(state["forces"], dtype = float)
         if state.get("energy") is not None:
             obj.energy = float(state["energy"])
-        if state.get("hessian") is not None:
-            obj.hessian = np.array(state["hessian"], dtype = float)
+        if load_hessian is True:
+            if state.get("hessian") is not None:
+                obj.hessian = np.array(state["hessian"], dtype = float)
 
         return obj
     

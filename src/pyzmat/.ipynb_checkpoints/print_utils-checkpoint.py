@@ -161,7 +161,7 @@ class PrintUtils:
             block_end = min(block_start + block_size, m)
     
             # header row
-            print(" " * (fw + 1), end=" ")
+            print(" " * (fw - 6 + 1), end=" ")
             for j in range(block_start, block_end):
                 print(f"{new_order[j]:{fw}s}", end=" ")
             print()
@@ -169,12 +169,13 @@ class PrintUtils:
             # data rows
             for i in range(block_start, m):
                 # row label
-                print(f"{new_order[i]:{fw}s}", end=" ")
+                print(f"{new_order[i]:{fw - 9}s}", end=" ")
                 for j in range(block_start, block_end):
-                    val = H2[i, j]
-                    # build abs‐value string
-                    sig = "-" if val < 0 else " "
-                    body = f"{abs(val):.8E}"       # always starts with a digit
-                    entry = (sig + body).ljust(fw)  # pad on right
-                    print(entry, end=" ")
+                    if j <= i:
+                        val = H2[i, j]
+                        # build abs‐value string
+                        sig = "-" if val < 0 else " "
+                        body = f"{abs(val):.8E}"       # always starts with a digit
+                        entry = (sig + body).ljust(fw)  # pad on right
+                        print(entry, end=" ")
                 print()
