@@ -376,7 +376,7 @@ class ZMatrix:
             out = calc.eval(data, forces = True, hessian = True)
             H_cart = out['hessian']
 
-        N = H_cart.shape[1]
+        N = H_cart.shape[0]
         return H_cart.reshape((3 * N, 3 * N))
 
 
