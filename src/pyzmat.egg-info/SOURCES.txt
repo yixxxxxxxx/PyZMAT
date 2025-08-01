@@ -1,10 +1,12 @@
+LICENSE
+README.md
 setup.py
 src/pyzmat/__init__.py
 src/pyzmat/constraints.py
-src/pyzmat/parseutils.py
-src/pyzmat/printutils.py
+src/pyzmat/parse_utils.py
+src/pyzmat/print_utils.py
+src/pyzmat/zmat_utils.py
 src/pyzmat/zmatrix.py
-src/pyzmat/zmatutils.py
 src/pyzmat.egg-info/PKG-INFO
 src/pyzmat.egg-info/SOURCES.txt
 src/pyzmat.egg-info/dependency_links.txt
