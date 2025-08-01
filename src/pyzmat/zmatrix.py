@@ -455,7 +455,7 @@ class ZMatrix:
 
     def get_geom_fd_hessian(self, db, da, dt):
         """Quasi-analytical Hessian from a finite-difference curvature tensor, for testing only"""
-        H_cart = self.get_hess_cart()
+        H_cart = np.array(self.get_hess_cart())
         B = self._get_B_matrix()
         K = ZmatUtils.get_fd_curvature_tensor(self.zmat, self.zmat_conn, db, da, dt)
 
@@ -467,7 +467,7 @@ class ZMatrix:
     
     def get_hessian(self):
         """Calculate fully analytical Hessian. Recommended for production use."""
-        H_cart = self.get_hess_cart()
+        H_cart = np.array(self.get_hess_cart())
         B = self._get_B_matrix()
         K = self._get_K_tensor()
         F_cart = self.get_forces_cart()
