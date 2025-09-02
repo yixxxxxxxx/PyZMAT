@@ -1,4 +1,4 @@
-Metadata-Version: 2.1
+Metadata-Version: 2.4
 Name: pyzmat
 Version: 0.1.0
 Summary: Wrapper around ASE & ML-FFs for internal-coordinate workflows
@@ -10,3 +10,9 @@ License-File: LICENSE
 Requires-Dist: ase>=3.23.1
 Requires-Dist: numpy>=1.20
 Requires-Dist: scipy>=1.6
+Dynamic: author
+Dynamic: classifier
+Dynamic: license-file
+Dynamic: requires-dist
+Dynamic: requires-python
+Dynamic: summary
