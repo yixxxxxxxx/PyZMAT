@@ -29,13 +29,17 @@ warnings.simplefilter("ignore", category=FutureWarning)
 class ZMatrix:
 
 	def __init__(self, zmat, zmat_conn, constraints = None, name = None, energy = None, forces = None, hessian = None):
+		'''
+		
+		
+		'''
 		self.name = name if name else "unnamed molecule"
 		self.zmat = zmat
-		self.zmat_conn = zmat_conn  # Each connectivity is now (symbol, bond, angle, dihedral)
+		self.zmat_conn = zmat_conn
 		self._constraints = constraints if constraints else Constraints()  # Default to empty constraints
 	
 
-		# Pretty unused, ignore these
+		# Unused, ignore these
 #		self.con_dict = self._find_constraint_values()
 #		self.con_ids = list(self.con_dict.keys())
 #		self._apply_constraints()

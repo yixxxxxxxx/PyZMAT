@@ -12,43 +12,45 @@ class ZmatUtils:
     @staticmethod
     def kronecker_delta(i, j):
         """
-        The Kronecker δ function returns 1 if its two inputs are equal and 0 otherwise.
+        The Kronecker δ function returns 1 if its two inputs i and j are equal and 0 otherwise.
         """
         if not isinstance(i, int) or not isinstance(j, int):
             raise TypeError("Inputs to kronecker_delta must be integers.")
         return 1 if i == j else 0
 
     @staticmethod
-    def get_zmat_def(atoms, cutoff_scale=1.2):
+    def get_zmat_def(atoms, cutoff_scale = 1.2):
         """
-        Generate a possibly sensible zmat definition from cartesian coordinates. 
+        Generate a possibly sensible zmat definition from Cartesian coordinates. 
         Based on: O. Weser, B. Hein-Janke, R. A. Mata, J. Comput. Chem. 2023, 44(5), 710. https://doi.org/10.1002/jcc.27029
         Very under tested: use at own risk.
     
-        Input: 
-        1. An ASE Atoms object
-        2. (Optional) A scale factor for ASE covalent cutoffs
+        Parameters: 
+        atoms: ASE Atoms object
+        cutoff_scale: (Optional) A scale factor for ASE covalent cutoffs
     
         Returns:
-        A list of tuples comprising
-        (i a b d) 
-        where each is an index from atoms
+        zmat_def: List of tuples defining the connectivities of a Z-matrix from an unordered* list of Cartesian coordinates, 
+        of the form [(i', j', k', l'), ...] where i' is the index of the atom being defined, j' is the index of the bond reference, 
+        k' is the index of the angle reference, and l' is the index of the dihedral reference in the Cartesian list.
+
+        *: i.e. when the order of the Cartesian list does not match the order in which the Z-matrix is defined.  
         """
     
         # Function to find the neighbor with the maximum valency
         def max_valent(neigh):
-            return max(neigh, key=lambda x: len(conn_graph[x]))
+            return max(neigh, key = lambda x: len(conn_graph[x]))
         
         # Get covalent cutoffs for each atom in the list
-        cutoffs=natural_cutoffs(atoms)
-        cutoffs=[c * cutoff_scale for c in cutoffs]
+        cutoffs = natural_cutoffs(atoms)
+        cutoffs = [c * cutoff_scale for c in cutoffs]
     
         # Get a list of all bonded neighbors i and j
         i_list, j_list = neighbor_list('ij', atoms, cutoff=cutoffs,self_interaction=False)
-        natms=len(atoms)
+        natms = len(atoms)
     
         # Define connectivity graph
-        conn_graph={i: set() for i in range(0,natms)}       # Initialise dictionary of sets
+        conn_graph = {i: set() for i in range(0,natms)}       # Initialise dictionary of sets
         for i, j in zip(i_list, j_list):
             if (i != j):                                    # Redundant since ASE's neighbor_list avoids self interaction, but just in case
                 conn_graph[i].add(j)
@@ -57,60 +59,60 @@ class ZmatUtils:
         # The i-th entry in conn_graph is thus the set of atoms j bonded to i
     
         # Find atom closest to centroid that is NOT HYDROGEN
-        coords=atoms.get_positions()
-        centroid=coords.mean(axis=0)
-        elements=atoms.get_chemical_symbols()
-        indices=np.arange(0,len(elements))
-        distances=np.linalg.norm(coords - centroid, axis=1)
+        coords = atoms.get_positions()
+        centroid = coords.mean(axis = 0)
+        elements = atoms.get_chemical_symbols()
+        indices = np.arange(0, len(elements))
+        distances = np.linalg.norm(coords - centroid, axis = 1)
     
         zipped = list(zip(elements, indices, distances))
-        zipped_sorted = sorted(zipped, key=lambda x: x[2])
+        zipped_sorted = sorted(zipped, key = lambda x: x[2])
         elements_sorted, indices_sorted, distances_sorted = zip(*zipped_sorted)
     
         for i in range(len(distances_sorted)):
-            if (elements_sorted[i]!='H'):
-                origin=indices_sorted[i]
+            if (elements_sorted[i] != 'H'):
+                origin = indices_sorted[i]
                 break
         
         # Initialize dictionaries (All indices are based on the input list of atoms)
         # Zmatrix being constructed
-        zmatrix={   
+        zmatrix = {   
                 origin: {'b': None, 'a': None, 'd': None}           
                 }
         # Atoms already visited
-        visited={origin}
+        visited = {origin}
     
         # Children to the current parent: origin
-        parent={nbr: origin for nbr in conn_graph[origin]}
+        parent = {nbr: origin for nbr in conn_graph[origin]}
     
         # Neighbors to the current set of children, EXCLUDING visited sites
-        work={nbr: conn_graph[nbr] - visited for nbr in conn_graph[origin]}
+        work = {nbr: conn_graph[nbr] - visited for nbr in conn_graph[origin]}
     
         # Main loop
         while work:     # So long as work is not empty, there is work to be done
             new_work = {}
     
             # To expand the Zmatrix frontier, we prioritize neighbor's with high valency
-            for i in sorted(work, key=lambda x: len(conn_graph[x]), reverse=True):
+            for i in sorted(work, key = lambda x: len(conn_graph[x]), reverse = True):
     
                 if (i in visited):  # If neighbor has been visited then skip
                     continue
                 
                 # BOND: Current parent
-                b=parent[i]         
+                b = parent[i]         
     
                 # Case: b in first three entries of zmatrix 
                 # BIT: I think this is relevant to the 'else' case when checking len(zmat)
                 keys=list(zmatrix.keys())
                 if (b in keys[:3]):
-                    if (len(zmatrix)==1):       # Only 1 atom exist in Zmat, i is the second atom
-                        a=None
-                        d=None
+                    if (len(zmatrix) == 1):       # Only 1 atom exist in Zmat, i is the second atom
+                        a = None
+                        d = None
                         # Only bond; no angle or torsion
     
-                    elif (len(zmatrix)==2):     # Only 2 atoms exist in Zmat, i is the third atom
-                        a=max_valent(conn_graph[b] & set(zmatrix.keys()))       
-                        d=None
+                    elif (len(zmatrix) == 2):     # Only 2 atoms exist in Zmat, i is the third atom
+                        a = max_valent(conn_graph[b] & set(zmatrix.keys()))       
+                        d = None
                         # BIT: 
                         # Technically at this point there is only 1 choice for the angle atom
                         # The remaining atom bonded to b and existing in the Zmat
@@ -120,39 +122,39 @@ class ZmatUtils:
                         # Make the angle the parent of the bond (should be the case)
                         # Else, make it the highest valency neighbor-to-b already defined
                         if (parent.get(b) is not None): 
-                            a=parent[b]         
+                            a = parent[b]         
                         else:
-                            a=max_valent(conn_graph[b] & set(zmatrix.keys()))
+                            a = max_valent(conn_graph[b] & set(zmatrix.keys()))
     
                         # Make the dihedral the parent of the angle, if already defined and not b/a
                         # Else, make it the highest valency neighbor-to-a or b, that have already been defined but are not b or a
                         if ((parent.get(a) is not None)and(parent[a] not in {b, a})):
-                            d=parent[a]
+                            d = parent[a]
                         else:
-                            neighbors_a=(conn_graph[a] & set(zmatrix.keys())) - {b, a}
+                            neighbors_a = (conn_graph[a] & set(zmatrix.keys())) - {b, a}
                             if (neighbors_a):
-                                d=max_valent(neighbors_a)   
+                                d = max_valent(neighbors_a)   
                             else:
-                                d=max_valent((conn_graph[b] & set(zmatrix.keys())) - {b, a})
+                                d = max_valent((conn_graph[b] & set(zmatrix.keys())) - {b, a})
                 else:
                     # fallback
-                    a=zmatrix[b]['b']
-                    d=zmatrix[b]['a']
+                    a = zmatrix[b]['b']
+                    d = zmatrix[b]['a']
     
                 # Add to Zmatrix
-                zmatrix[i]={'b': b, 'a': a, 'd': d}
+                zmatrix[i] = {'b': b, 'a': a, 'd': d}
     
                 # Update the list of visited atoms
                 visited.add(i)
     
                 # Expand frontier
-                for j in sorted(work[i], key=lambda x: len(conn_graph[x]), reverse=True):
+                for j in sorted(work[i], key = lambda x: len(conn_graph[x]), reverse = True):
                     if (j not in visited):
-                        new_work[j]=conn_graph[j] - visited
-                        parent[j]=i
+                        new_work[j] = conn_graph[j] - visited
+                        parent[j] = i
     
             # Update work
-            work=new_work
+            work = new_work
     
         # MAIN LOOP END
     
@@ -166,8 +168,21 @@ class ZmatUtils:
     @staticmethod
     def atoms_2_zmat_init(atoms, zmat_def):
         """
-        Convert an ASE Atoms object (in Cartesian coordinates) into a Z-matrix representation.
+        Convert an unordered ASE Atoms object (in Cartesian coordinates) into a Z-matrix representation.
+
+        Parameters:
+        atoms: ASE Atoms object
+        zmat_def: List of tuples defining the connectivities of the Z-matrix from an unordered list of Cartesian coordinates, 
+        of the form [(i', j', k', l'), ...] where i' is the index of the atom being defined, j' is the index of the bond reference, 
+        k' is the index of the angle reference, and l' is the index of the dihedral reference in the Cartesian list. 
+
+        Returns:
+        zmat: List of lists defining the values of the Z-matrix of the form [(symbol, bond_length, bond_angle, dih_angle), ...]
+        zmat_conn: List of tuples defining the connectivities of the Z-matrix of the form [(symbol, j, k, l), ...] where j, k, and l are
+        the indeces of the bond reference, angle reference, and dihedral reference respectively in the Z-matrix. 
         """
+
+        # 
         if not isinstance(atoms, Atoms):
             raise TypeError("atoms must be an ASE Atoms object.")
         if not isinstance(zmat_def, list):
@@ -559,8 +574,7 @@ class ZmatUtils:
                                               - bond_length * ZmatUtils.kronecker_delta(ijk, s) * ZmatUtils.kronecker_delta(ijk, t) * np.cos(bond_angle))
                             )
     
-                            K[3 * i + c, t, s] = K[3 * i + c, s, t]
-        #K[np.abs(K) < 1e-9] = 0                
+                            K[3 * i + c, t, s] = K[3 * i + c, s, t]               
         return K     
                     
 
