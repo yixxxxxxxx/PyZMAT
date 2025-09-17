@@ -530,7 +530,7 @@ class ZMatrix:
 		from ase.visualize import view
 		return view(self.get_atoms(), viewer = 'x3d')
 	
-	def optimise_ase(self, trajectory = None, mode = 'linesearch', fmax = 1e-5, calc_hess = False):
+	def optimise_ase(self, trajectory = None, mode = 'linesearch', fmax = 2.31e-2, calc_hess = False, fix_rototrans = False):
 		print('Initialising minimisation routine')
 		start_tot = time.perf_counter()
 		print('Model used:', self.calculator, self.model_size)
@@ -545,12 +545,20 @@ class ZMatrix:
 		print('======================================================================================')
 		atoms.calc = self.calculator
 		del atoms.constraints
-		
-		atoms.set_constraint([self.ase_constraints])
+
+		if fix_rototrans:
+			from ase.constraints import FixAtoms, FixedLine, FixedPlane
+			fix_atom_0 = FixAtoms(indices = [0])
+			fix_atom_1 = FixedLine(indices = [1], direction = [1, 0, 0])
+			fix_atom_2 = FixedPlane(indices = [2], direction = [0, 0, 1])
+			atoms.set_constraint([self.ase_constraints, fix_atom_0, fix_atom_1, fix_atom_2])
+
+		else:
+			atoms.set_constraint([self.ase_constraints])
 
 		if mode == 'linesearch':
 			dyn = BFGSLineSearch(atoms, trajectory = trajectory, restart = f'{self.name}_linesearch_opt.json')
-			print('Now beginning ASE BFGS Line Search minimisation routine')
+			print(f'Now beginning ASE BFGS Line Search minimisation routine, convergence threshold: fmax = {fmax}')
 			print('--------------------------------------------------------------------------------------')
 			start_min = time.perf_counter()
 			dyn.run(fmax = fmax)
@@ -562,7 +570,7 @@ class ZMatrix:
 
 		elif mode == 'bfgs':
 			dyn = BFGS(atoms, trajectory = trajectory, restart = f'{self.name}_bfgs_opt.json')
-			print('Now beginning ASE BFGS minimisation routine')
+			print(f'Now beginning ASE BFGS minimisation routine, convergence threshold: fmax = {fmax}')
 			print('--------------------------------------------------------------------------------------')
 			start_min = time.perf_counter()
 			dyn.run(fmax = fmax)
