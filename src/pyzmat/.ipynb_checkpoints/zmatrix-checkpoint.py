@@ -2,8 +2,6 @@ from ase import Atoms
 from ase.io import read, write
 from ase.geometry import *
 from ase.constraints import *
-from ase.optimize import BFGS
-from ase.optimize.bfgslinesearch import BFGSLineSearch
 from ase.units import *
 
 import time
@@ -37,15 +35,6 @@ class ZMatrix:
 		self.zmat = zmat
 		self.zmat_conn = zmat_conn
 		self._constraints = constraints if constraints else Constraints()  # Default to empty constraints
-	
-
-		# Unused, ignore these
-#		self.con_dict = self._find_constraint_values()
-#		self.con_ids = list(self.con_dict.keys())
-#		self._apply_constraints()
-#		self.var_ids = self._find_var_ids()  # Find variable indices
-#		self.var_list = self._extract_variables()  # Extract initial variables
-
 
 		
 		self.b_matrix = None
@@ -159,79 +148,6 @@ class ZMatrix:
 			self.model_size = model_size
 
 		self.model = model
-	
-
-
-#	## Some helper functions for the unused custom optimisation routine ############################################################################################
-#
-#	def _find_constraint_values(self):
-#		"""Tied to the unused ZMatrix.optimise() routine"""
-#		con_dict = {}
-#		# Bonds: global index = index * 3
-#		for index, val in self.constraints.bonds:
-#			global_index = index * 3
-#			if val is None:
-#				val = self._get_value_by_index(global_index)
-#			con_dict[global_index] = val
-#		# Angles: global index = index * 3 + 1
-#		for index, val in self.constraints.angles:
-#			global_index = index * 3 + 1
-#			if val is None:
-#				val = self._get_value_by_index(global_index)
-#			con_dict[global_index] = val
-#		# Dihedrals: global index = index * 3 + 2
-#		for index, val in self.constraints.dihedrals:
-#			global_index = index * 3 + 2
-#			if val is None:
-#				val = self._get_value_by_index(global_index)
-#			con_dict[global_index] = val
-#		return con_dict
-#
-#	def _apply_constraints(self):
-#		"""Tied to the unused ZMatrix.optimise() routine"""
-#		for global_index, value in self.con_dict.items():
-#			atom_index = global_index // 3
-#			coord_index = (global_index % 3) + 1
-#			self.zmat[atom_index][coord_index] = value
-#
-#	def _find_var_ids(self):
-#		"""Tied to the unused ZMatrix.optimise() routine"""
-#		total_vars = 3 * len(self.zmat)
-#		var_ids = [i for i in range(total_vars) if i not in self.con_ids and self._get_value_by_index(i) is not None]
-#		return var_ids
-#
-#	def _get_value_by_index(self, index):
-#		"""Tied to the unused ZMatrix.optimise() routine"""
-#		atom_idx = index // 3
-#		coord_idx = index % 3
-#		return self.zmat[atom_idx][coord_idx + 1]
-#
-#	def _extract_variables(self):
-#		"""Tied to the unused ZMatrix.optimise() routine"""
-#		all_values = [coord for row in self.zmat for coord in row[1:]]
-#		all_values = np.array(all_values)
-#		return all_values[self.var_ids]
-#
-#	def _reconstruct_full_z_matrix(self, vars):
-#		"""Tied to the unused ZMatrix.optimise() routine"""
-#		full_values = np.array([coord for row in self.zmat for coord in row[1:]])
-#		var_id = 0
-#		for i in range(len(full_values)):
-#			if i in self.var_ids:
-#				full_values[i] = vars[var_id]
-#				var_id += 1
-#			elif i in self.con_ids:
-#				full_values[i] = self.con_dict[i]
-#		reconstructed_zmat = []
-#		for i, (atom, bond, angle, dihedral) in enumerate(self.zmat):
-#			bond_val, angle_val, dihedral_val = full_values[i * 3:(i + 1) * 3]
-#			new_values = [
-#				bond_val if bond is not None else None,
-#				angle_val if angle is not None else None,
-#				dihedral_val if dihedral is not None else None
-#			]
-#			reconstructed_zmat.append((atom, *new_values))
-#		return reconstructed_zmat
 
 	## Calculate tensors of coordinate derivatives from pyzmat.ZmatUtils #######################################################
 
@@ -300,19 +216,6 @@ class ZMatrix:
 		return ZmatUtils.zmat_2_atoms(self.zmat, self.zmat_conn)
 
 	## Function for energy ##############################################################################################################
-
-	#def get_energy(self, vars):
-	#	if not hasattr(self, "model"):
-	#	   raise AttributeError(f"{self.__class__.__name__!r} has no attribute 'model'. Did you forget to run ZMatrix.attach_calculator()?")
-	#	zmat = self._reconstruct_full_z_matrix(vars)
-	#   atoms = ZmatUtils.zmat_2_atoms(zmat, self.zmat_conn)
-	#	atoms.calc = self.calculator
-	#	energy = atoms.get_potential_energy()
-	#	self.iteration += 1
-	#	print('Iteration', self.iteration)
-	#	PrintUtils.print_xyz(atoms, comment='', fmt='%22.15f')
-	#	print(energy)
-	#	return energy
 
 	def get_energy(self):
 		if not hasattr(self, "model"):
@@ -493,43 +396,14 @@ class ZMatrix:
 		self.hessian = hessian
 		return hessian
 
-
-	## Unused custom optimisation routine ###########################################################################################
-
-	def callback(self, vars):
-		"""Tied to the unused ZMatrix.optimise() routine"""
-		self.iteration += 1
-		zmat = self._reconstruct_full_z_matrix(vars)
-		atoms = self.get_atoms()
-		print("Iteration:", self.iteration, "Current Z-matrix:", zmat, flush=True)
-		PrintUtils.print_xyz(atoms, comment=self.name + str(self.iteration), fmt='%22.15f')
-
-	def optimise(self):
-		"""Imcomplete/deprecated optimisation routine. Will likely produce incorrect results. Use ZMatrix.optimise_ase() instead"""
-		print('WARNING: imcomplete/deprecated function. Will likely produce incorrect results. Use ZMatrix.optimise_ase() instead')
-		result = minimize(
-			self.get_energy,
-			self.var_list,
-			method='BFGS',
-			jac=self.get_jacobian,
-			callback=self.callback,
-			options={'gtol': 1e-8}
-		)
-		self.zmat = self._reconstruct_full_z_matrix(result.x)
-		self.b_matrix = self._get_B_matrix()  # Update B-matrix
-		self.con_dict = self._find_constraint_values()  # Update constraint values
-		self.con_ids = list(self.con_dict.keys())
-		self.var_ids = self._find_var_ids()  # Update variable indices
-		self.var_list = self._extract_variables()  # Extract new variables
-		return self.zmat, result.fun
-
-
-	## Visualisation and optimisation ########################################################################
+	## Visualisation ###############################################################################
 
 	def view_ase(self):
 		from ase.visualize import view
 		return view(self.get_atoms(), viewer = 'x3d')
-	
+
+	## Optimisation with ASE ########################################################################
+		
 	def optimise_ase(self, trajectory = None, mode = 'linesearch', fmax = 2.31e-2, calc_hess = False, fix_rototrans = False):
 		print('Initialising minimisation routine')
 		start_tot = time.perf_counter()
@@ -557,6 +431,8 @@ class ZMatrix:
 			atoms.set_constraint([self.ase_constraints])
 
 		if mode == 'linesearch':
+			from ase.optimize.bfgslinesearch import BFGSLineSearch
+
 			dyn = BFGSLineSearch(atoms, trajectory = trajectory, restart = f'{self.name}_linesearch_opt.json')
 			print(f'Now beginning ASE BFGS Line Search minimisation routine, convergence threshold: fmax = {fmax}')
 			print('--------------------------------------------------------------------------------------')
@@ -569,6 +445,7 @@ class ZMatrix:
 			print('--------------------------------------------------------------------------------------')
 
 		elif mode == 'bfgs':
+			from ase.optimize import BFGS
 			dyn = BFGS(atoms, trajectory = trajectory, restart = f'{self.name}_bfgs_opt.json')
 			print(f'Now beginning ASE BFGS minimisation routine, convergence threshold: fmax = {fmax}')
 			print('--------------------------------------------------------------------------------------')
@@ -601,7 +478,7 @@ class ZMatrix:
 		print('======================================================================================')
 		PrintUtils.print_forces(forces, self.zmat)
 		print('======================================================================================')
-		if calc_hess == True:
+		if calc_hess:
 			print('Calculating Hessian matrix as calc_hess is set to True...')
 			hessian = self.get_hessian()
 			print('Calculated Hessian:')
@@ -621,6 +498,235 @@ class ZMatrix:
 		print(f'Minimisation wall time = {wall_min:.6f} seconds')
 		
 		return zmat_minimised, energy, forces
+
+	## Setting up optking minimisation ########################################################################
+
+	def form_psi4_geom(self):
+		'''
+		Form a psi4.geometry molecule from a Z-matrix and its connectivities. 
+		'''
+		from psi4 import geometry
+		
+		geom_parts = []
+		for i, zmat_line in enumerate(self.zmat):
+			geom_line = " " + str(zmat_line[0])
+			if zmat_line[1] is not None:
+				bond_ref = self.zmat_conn[i][1] + 1
+				bond_val = zmat_line[1]
+				geom_line += ' ' + str(bond_ref) + ' ' + str(bond_val)
+			if zmat_line[2] is not None:
+				ang_ref = self.zmat_conn[i][2] + 1
+				ang_val = zmat_line[2]
+				geom_line += ' ' + str(ang_ref) + ' ' + str(ang_val)
+			if zmat_line[3] is not None:
+				dih_ref = self.zmat_conn[i][3] + 1
+				dih_val = zmat_line[3]
+				geom_line += ' ' + str(dih_ref) + ' ' + str(dih_val)
+			geom_parts.append(geom_line)
+		geom_string = "\n".join(geom_parts)
+		return geometry(geom_string)
+
+
+	def get_optking_constraints(self):
+		# Build ASE constraints using the provided (or default) values.
+		bonds = []
+		for index, val in self.constraints.bonds:
+			j = self.zmat_conn[index][1]
+			bonds.append(j + 1)
+			bonds.append(index + 1)
+		angles = []
+		for index, val in self.constraints.angles:
+			j = self.zmat_conn[index][1]
+			k = self.zmat_conn[index][2]
+			angles.append(k + 1)
+			angles.append(j + 1)
+			angles.append(index + 1)
+		dihedrals = []
+		for index, val in self.constraints.dihedrals:
+			dihedral_angle = val if val is not None else self.zmat[index][3]
+			j = self.zmat_conn[index][1]
+			k = self.zmat_conn[index][2]
+			l = self.zmat_conn[index][3]
+			dihedrals.append(l + 1)
+			dihedrals.append(k + 1)
+			dihedrals.append(j + 1)
+			dihedrals.append(index + 1)
+	
+		psi4_constraints = {}
+		if bonds:
+			psi4_constraints["frozen_distance"] = " ".join([str(bond) for bond in bonds])
+		if angles:
+			psi4_constraints["frozen_bend"] = " ".join([str(ang) for ang in angles])
+		if dihedrals:
+			psi4_constraints["frozen_dihedral"] = " ".join([str(dih) for dih in dihedrals])
+		return psi4_constraints
+
+	def ase_engine(self, atoms, hess_step = False):
+		atoms.calc = self.calculator
+		energy = atoms.get_potential_energy() / Ha
+		forces = atoms.get_forces()
+		forces = np.array(forces).flatten() / Ha * Bohr * -1
+		hessian = None
+		if hess_step:
+			hessian = calc.get_hessian(atoms = ZmatUtils.zmat_2_atoms(mol.zmat, mol.zmat_conn))
+			hessian = np.array(hessian).reshape(len(forces), len(forces)) / Ha * Bohr
+		return energy, forces, hessian
+
+		
+	def run_optking(self, geometry, symbols, opt_options, max_iter):
+		import optking
+		if self.constraints is not None:
+			psi4_constraints = self.get_optking_constraints()
+			opt_options.update(psi4_constraints)
+
+		opt = optking.CustomHelper(geometry, opt_options)
+		
+		print('step', '	  ', 'E [eV]', '	  ', 'fmax [eV/A]')
+		
+		for step in range(max_iter):
+
+			# Determine whether the analytical Hessian matrix needs to be calculated at a given step
+
+			if opt_options["full_hess_every"] != -1:
+				if opt_options["full_hess_every"] == 0 and step == 0:
+					hess_step = True
+					print('Calculating Hessian for step 0 as full_hess_every is set to 0')
+				elif opt_options["full_hess_every"] != 0 and step % opt_options["full_hess_every"] == 0:
+					hess_step = True
+					print(f'Calculating Hessian for step {step} as full_hess_every is set to {opt_options["full_hess_every"]}')
+				else:
+					hess_step = False
+			else:
+				hess_step = False
+
+			# Send optimiser parameters into ASE engine to get energy, Cartesian forces, and optionally Cartesian Hessian
+
+			atoms_step = Atoms(symbols = symbols, positions = opt.geom * Bohr)
+				
+			E, gX, HX = self.ase_engine(atoms_step, hess_step)
+			
+			print(step, '	  ', E * Ha, '	  ', max(gX) * Ha / Bohr)
+
+			# Send ASE outputs into optimiser to process and take a step
+		
+			opt.E = E
+			opt.gX = gX
+
+			if hess_step:
+				opt.HX = HX
+			
+			opt.compute()
+			opt.take_step()
+		
+			conv = opt.test_convergence()
+		
+			if conv is True:
+				print('--------------------------------------------------------------------------------------')
+				print('! OptKing minimisation complete. U_tot =', E, 'Ha, or', E * Ha, 'eV')
+				print('--------------------------------------------------------------------------------------')
+				break
+		else:
+			print(f"Minimisation FAILED to converge within {max_iter} steps")
+			raise RuntimeError(f"Minimisation FAILED to converge within {max_iter} steps")
+
+		res = opt.summarize_result()
+		json_output = opt.close()
+
+		atoms_opt = Atoms(symbols = symbols, positions = res[1] * Bohr)
+		
+		return atoms_opt
+
+	def optimise_optking(self, attempt_recovery = True, g_convergence = "gau", full_hess_every = -1, opt_coordinates = "internal", intrafrag_hess = "SCHLEGEL", calc_hess = False, max_iter = 500):
+		restart_flag = False
+		
+		opt_options = {"g_convergence": g_convergence, "full_hess_every": full_hess_every, "intrafrag_hess": intrafrag_hess, "opt_coordinates": opt_coordinates}
+
+		print('Initialising minimisation routine')
+		start_tot = time.perf_counter()
+		print('Model used:', self.calculator, self.model_size)
+		print('Input Z-matrix:')
+		print('======================================================================================')
+		PrintUtils.print_zmat(self.zmat, self.zmat_conn, self.constraints)
+		print('======================================================================================')
+		print('Building cartesian molecule from input geometry...')
+		atoms = self.get_atoms()
+		print('======================================================================================')
+		PrintUtils.print_xyz(atoms, comment='Input coordinates of ' + self.name, fmt='%22.15f')
+		print('======================================================================================')
+
+		geometry = self.form_psi4_geom()
+		symbols = [line[0] for line in self.zmat]
+
+		print(f'Now beginning OptKing minimisation routine in {opt_coordinates} coordinates, convergence threshold: {g_convergence}')
+		print('--------------------------------------------------------------------------------------')
+
+		try:
+			start_min1 = time.perf_counter()
+			atoms_opt = self.run_optking(geometry, symbols, opt_options, max_iter)
+			end_min1 = time.perf_counter()
+		except Exception:
+			if (opt_coordinates == "internal" or opt_coordinates == "redundant") and attempt_recovery:
+				try:
+					restart_flag = True
+					end_min1 = time.perf_counter()
+					print('Initial minimisation in redundant coordinates has failed catastrophically. Re-attempting optimisation in Cartesian coordinates from starting geometry...')
+					print(f'Now beginning OptKing minimisation routine in cartesian coordinates, convergence threshold: {g_convergence}')
+					print('--------------------------------------------------------------------------------------')
+					opt_options_restart = {"g_convergence": g_convergence, "full_hess_every": full_hess_every, "intrafrag_hess": "SIMPLE", "opt_coordinates": "cartesian"}
+					start_min2 = time.perf_counter()
+					atoms_opt = self.run_optking(geometry, symbols, opt_options_restart, max_iter)
+					end_min2 = time.perf_counter()
+				except Exception:
+					raise RuntimeError("OptKing minimisation routine has failed during re-attempt. Please try to minimise with ZMatrix.optimise_ase() instead.")
+			
+		zmat_minimised = ZmatUtils.atoms_2_zmat(atoms_opt, self.zmat_conn)
+		atoms_minimised = ZmatUtils.zmat_2_atoms(zmat_minimised, self.zmat_conn)
+		atoms_minimised.calc = self.calculator
+
+		energy = atoms_minimised.get_potential_energy()
+		forces_cart_2d = atoms_minimised.get_forces(apply_constraint = False)
+		forces_cart = np.array(forces_cart_2d).reshape(-1, 1)
+		self.zmat = zmat_minimised
+		print('Optimised Z-matrix:')
+		print('======================================================================================')
+		PrintUtils.print_zmat(self.zmat, self.zmat_conn, self.constraints)
+		print('======================================================================================')
+		forces = self.get_forces()
+
+		print('Optimised cartesian coordinates:')		
+		print('======================================================================================')
+		PrintUtils.print_xyz(atoms_minimised, comment='OptKing minimised ' + self.name, fmt='%22.15f')
+		print('======================================================================================')
+		print('Forces in terms of dU/db [Ha/bohr], dU/da [Ha/rad], and dU/dt [Ha/rad]:')
+		print('======================================================================================')
+		PrintUtils.print_forces(forces, self.zmat)
+		print('======================================================================================')
+		if calc_hess:
+			print('Calculating Hessian matrix as calc_hess is set to True...')
+			hessian = self.get_hessian()
+			print('Calculated Hessian:')
+			PrintUtils.print_hessian(hessian, self.zmat, constraints = self.constraints, block_size = 5)
+			print('======================================================================================')
+		print('Routine finished successfully.')
+
+		self.forces = forces
+		self.energy = energy
+
+		
+		end_tot = time.perf_counter()
+		wall_tot = end_tot - start_tot
+		wall_min = end_min1 - start_min1
+		
+		print(f'Total wall time = {wall_tot:.6f} seconds')
+		print(f'Minimisation wall time = {wall_min:.6f} seconds')
+		if restart_flag == True:
+			wall_min2= end_min2 - start_min2
+			print('Re-attempt detected:')
+			print(f'2nd minimisation wall time = {wall_min2:.6f} seconds')
+		
+		return zmat_minimised, energy, forces				
+				
+				
 
 	## Functions for saving output ################################################################################
 
