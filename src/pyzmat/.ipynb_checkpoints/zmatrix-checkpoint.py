@@ -4,9 +4,15 @@ from ase.geometry import *
 from ase.constraints import *
 from ase.units import *
 
+
+#from ase.optimize.bfgslinesearch import BFGSLineSearch
+#from ase.optimize import BFGS
+#from psi4 import geometry
+#import optking
+
+
 import time
 
-from scipy.optimize import minimize
 import numpy as np
 
 from .zmat_utils import ZmatUtils
@@ -54,6 +60,14 @@ class ZMatrix:
 	def load_from_gaussian(cls, filename: str) -> "ZMatrix":
 		zmat, zmat_conn, constraints = ParseUtils.parse_gaussian_input(filename)
 		obj = cls(zmat = zmat, zmat_conn = zmat_conn, constraints = constraints, name = filename)
+		return obj
+
+	@classmethod
+	def load_from_orca_out(cls, filename: str) -> "ZMatrix":
+		zmat, zmat_conn, constraints, energy, forces_cart = ParseUtils.parse_orca_output(filename)
+		B = ZmatUtils.get_B_matrix(zmat, zmat_conn)
+		forces = (B @ forces_cart).flatten()
+		obj = cls(zmat = zmat, zmat_conn = zmat_conn, constraints = constraints, energy = energy, forces = forces, name = filename)
 		return obj
 		
 	@classmethod
@@ -431,7 +445,6 @@ class ZMatrix:
 			atoms.set_constraint([self.ase_constraints])
 
 		if mode == 'linesearch':
-			from ase.optimize.bfgslinesearch import BFGSLineSearch
 
 			dyn = BFGSLineSearch(atoms, trajectory = trajectory, restart = f'{self.name}_linesearch_opt.json')
 			print(f'Now beginning ASE BFGS Line Search minimisation routine, convergence threshold: fmax = {fmax}')
@@ -445,7 +458,6 @@ class ZMatrix:
 			print('--------------------------------------------------------------------------------------')
 
 		elif mode == 'bfgs':
-			from ase.optimize import BFGS
 			dyn = BFGS(atoms, trajectory = trajectory, restart = f'{self.name}_bfgs_opt.json')
 			print(f'Now beginning ASE BFGS minimisation routine, convergence threshold: fmax = {fmax}')
 			print('--------------------------------------------------------------------------------------')
@@ -505,7 +517,6 @@ class ZMatrix:
 		'''
 		Form a psi4.geometry molecule from a Z-matrix and its connectivities. 
 		'''
-		from psi4 import geometry
 		
 		geom_parts = []
 		for i, zmat_line in enumerate(self.zmat):
@@ -574,7 +585,7 @@ class ZMatrix:
 
 		
 	def run_optking(self, geometry, symbols, opt_options, max_iter):
-		import optking
+
 		if self.constraints is not None:
 			psi4_constraints = self.get_optking_constraints()
 			opt_options.update(psi4_constraints)
