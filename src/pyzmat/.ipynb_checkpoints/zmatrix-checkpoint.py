@@ -27,32 +27,35 @@ from typing import Tuple, Optional
 import io
 from contextlib import redirect_stdout
 
+from typing import List, Tuple, Optional, Dict
+
 import warnings
 warnings.simplefilter("ignore", category=FutureWarning)
 
 class ZMatrix:
 
-	def __init__(self, zmat, zmat_conn, constraints = None, name = None, energy = None, forces = None, hessian = None):
-		'''
-		
-		
-		'''
+	def __init__(self, zmat, zmat_conn, constraints = None, name = None, energy = None, forces = None, hessian = None, forces_cart = None, hessian_cart = None):
+
 		self.name = name if name else "unnamed molecule"
 		self.zmat = zmat
 		self.zmat_conn = zmat_conn
 		self._constraints = constraints if constraints else Constraints()  # Default to empty constraints
+		changes = self.apply_constraints_to_zmat()
 
 		
 		self.b_matrix = None
 		self.energy = energy if energy is not None else None
 		self.forces = forces if forces is not None else None
 		self.hessian = hessian if hessian is not None else None
+		self.forces_cart = forces_cart if forces_cart is not None else None
+		self.hessian_cart = hessian_cart if hessian_cart is not None else None
 		self.ase_constraints = self._get_ase_constraints()
 		
 		self.iteration = 0
 
 	def __repr__(self):
 		return f"ZMatrix({len(self.zmat_conn)} atoms, {self.constraints})"
+	
 
 	## Class methods for loading from various file types #########################################################################################################
 
@@ -63,11 +66,17 @@ class ZMatrix:
 		return obj
 
 	@classmethod
-	def load_from_orca_out(cls, filename: str) -> "ZMatrix":
+	def load_from_orca_output(cls, filename: str) -> "ZMatrix":
 		zmat, zmat_conn, constraints, energy, forces_cart = ParseUtils.parse_orca_output(filename)
 		B = ZmatUtils.get_B_matrix(zmat, zmat_conn)
-		forces = (B @ forces_cart).flatten()
-		obj = cls(zmat = zmat, zmat_conn = zmat_conn, constraints = constraints, energy = energy, forces = forces, name = filename)
+		forces = (B @ forces_cart.flatten()).flatten()
+		obj = cls(zmat = zmat, zmat_conn = zmat_conn, constraints = constraints, energy = energy, forces = forces, forces_cart = forces_cart, name = filename)
+		return obj
+
+	@classmethod
+	def load_from_orca_input(cls, filename: str) -> "ZMatrix":
+		zmat, zmat_conn, constraints = ParseUtils.parse_orca_input(filename)
+		obj = cls(zmat = zmat, zmat_conn = zmat_conn, constraints = constraints, name = filename)
 		return obj
 		
 	@classmethod
@@ -123,11 +132,92 @@ class ZMatrix:
 	@constraints.setter
 	def constraints(self, value):
 		self._constraints = value
+		changes = self.apply_constraints_to_zmat()
 		self.ase_constraints = self._get_ase_constraints()
 
 	def clear_constraints(self):
 		self._constraints = Constraints()
 		self.ase_constraints = self._get_ase_constraints()
+
+	def apply_constraints_to_zmat(self, *,
+	normalise_angles: bool = True,
+	strict_connectivity: bool = True,
+	) -> list[tuple]:
+		"""
+		Apply *supplied* constraint values (not None) directly into self.zmat.
+	
+		Parameters
+		----------
+		normalise_angles : bool
+			If True, wrap dihedrals to [0, 360) and bend angles to [0, 180].
+		strict_connectivity : bool
+			If True, raise if a constrained coord doesn't exist in this z-matrix
+			line (e.g. angle/dihedral is None because it's the first/second atom).
+	
+		Returns
+		-------
+		changes : list of tuples
+			[(kind, idx, old_value, new_value)] for each change made, where
+			kind ∈ {"bond", "angle", "dihedral"} and idx is the atom index.
+		"""
+		def _wrap360(x: float) -> float:
+			# 0 ≤ angle < 360
+			y = float(x) % 360.0
+			# Keep 360 exactly as 0 for neatness
+			return 0.0 if abs(y - 360.0) < 1e-12 else y
+	
+		def _bend_0_180(x: float) -> float:
+			# Map to [0, 180] using 0–360 periodicity
+			y = float(x) % 360.0
+			return 360.0 - y if y > 180.0 else y
+	
+		changes: list[tuple] = []
+	
+		# Bonds: (index, value_in_Å)
+		for idx, val in getattr(self._constraints, "bonds", []):
+			if val is None:
+				continue  # user didn't supply a fixed numeric value
+			if self.zmat[idx][1] is None and strict_connectivity:
+				raise ValueError(f"Bond for atom {idx} is undefined in z-matrix connectivity.")
+			old = self.zmat[idx][1]
+			new = float(val)
+			self.zmat[idx][1] = new
+			changes.append(("bond", idx, old, new))
+	
+		# Angles: (index, value_in_degrees)
+		for idx, val in getattr(self._constraints, "angles", []):
+			if val is None:
+				continue
+			if self.zmat[idx][2] is None and strict_connectivity:
+				raise ValueError(f"Angle for atom {idx} is undefined in z-matrix connectivity.")
+			old = self.zmat[idx][2]
+			new = float(val)
+			if normalise_angles:
+				new = _bend_0_180(new)
+			self.zmat[idx][2] = new
+			changes.append(("angle", idx, old, new))
+	
+		# Dihedrals: (index, value_in_degrees)
+		for idx, val in getattr(self._constraints, "dihedrals", []):
+			if val is None:
+				continue
+			if self.zmat[idx][3] is None and strict_connectivity:
+				raise ValueError(f"Dihedral for atom {idx} is undefined in z-matrix connectivity.")
+			old = self.zmat[idx][3]
+			new = float(val)
+			if normalise_angles:
+				new = _wrap360(new)
+			self.zmat[idx][3] = new
+			changes.append(("dihedral", idx, old, new))
+	
+		# Rebuild ASE constraints so that any None-values that default to zmat now
+		# inherit the updated numbers consistently.
+		self.ase_constraints = self._get_ase_constraints()
+	
+		return changes
+
+		
+
 
 	def attach_calculator(self, model, model_size = 'large', gpu = False):
 		"""Attach an MLIP as an ASE calculator to the ZMatrix object. Only supports MACE-off23 ('mace-off') and AIMNet2 ('aimnet2') at the moment."""
@@ -417,7 +507,8 @@ class ZMatrix:
 		return view(self.get_atoms(), viewer = 'x3d')
 
 	## Optimisation with ASE ########################################################################
-		
+	# Not recommended (especially with large molecules), use ORCA extopt instead
+	
 	def optimise_ase(self, trajectory = None, mode = 'linesearch', fmax = 2.31e-2, calc_hess = False, fix_rototrans = False):
 		print('Initialising minimisation routine')
 		start_tot = time.perf_counter()
@@ -512,6 +603,7 @@ class ZMatrix:
 		return zmat_minimised, energy, forces
 
 	## Setting up optking minimisation ########################################################################
+	# Not recommended, use ORCA external opt instead
 
 	def form_psi4_geom(self):
 		'''
@@ -735,10 +827,9 @@ class ZMatrix:
 			print('Re-attempt detected:')
 			print(f'2nd minimisation wall time = {wall_min2:.6f} seconds')
 		
-		return zmat_minimised, energy, forces				
-				
-				
+		return zmat_minimised, energy, forces	
 
+		
 	## Functions for saving output ################################################################################
 
 	def dump_json(self, filename = None):
@@ -795,3 +886,276 @@ class ZMatrix:
 					f.write('\n') 
 		except IOError as e:
 			print(f"Error writing to {filename}: {e}")
+
+	def save_mace_train_xyz(self, filename):
+		'''
+		Saves the current geometry as an xyz file formatted for MACE training data.
+		'''
+		file_content = PrintUtils.print_mace_training_xyz(self.get_atoms(), self.energy, self.forces_cart)
+		try:
+			with open(filename, 'a', encoding='utf-8') as f:
+				f.write(file_content)
+		except IOError as e:
+			print(f"Error writing to {filename}: {e}")
+
+	def save_orca_input(self, filename, *,
+		level_of_theory: str = "PBE0",
+		basis_set: str = "6-311G(d,p)",
+		maxcore_mb: int = 4000,
+		nproc: int = 8,
+		scf_maxiter: int = 256,
+		scf_conv: str = "STRONG",
+		geom_maxiter: int = 128,
+		geom_conv: str = "TIGHT",
+		tol_maxg: float = 4.5e-4,
+		tol_rmsg: float = 3.0e-4,
+		tol_maxd: float = 1.8e-3,
+		tol_rmsd: float = 1.2e-3,
+		use_symmetry: bool = False,
+		charge: int = 0,
+		multiplicity: int = 1,
+		title_lines: Optional[List[str]] = None,
+	):
+		'''
+		Saves the current Z-matrix as an ORCA input file.
+		'''
+		orca_input = PrintUtils.print_orca_input(self.zmat, self.zmat_conn, self.constraints, level_of_theory = level_of_theory, basis_set = basis_set, maxcore_mb = maxcore_mb, nproc = nproc, scf_maxiter = scf_maxiter, scf_conv = scf_conv, geom_maxiter = geom_maxiter, geom_conv = geom_conv, tol_maxg = tol_maxg, tol_rmsg = tol_rmsg, tol_maxd = tol_maxd, tol_rmsd = tol_rmsd, use_symmetry = use_symmetry, charge = charge, multiplicity = multiplicity, title_lines = title_lines)
+		try:
+			with open(filename, 'w', encoding='utf-8') as f:
+				f.write(orca_input)
+		except IOError as e:
+			print(f"Error writing to {filename}: {e}")
+
+	def save_orca_extopt_input(self, filename, wrapper_path, *,
+		maxcore_mb: int = 4000,
+		nproc: int = 8,
+		scf_maxiter: int = 256,
+		scf_conv: str = "STRONG",
+		Ext_Params: str = "",
+		geom_maxiter: int = 128,
+		geom_conv: str = "TIGHT",
+		tol_maxg: float = 4.5e-4,
+		tol_rmsg: float = 3.0e-4,
+		tol_maxd: float = 1.8e-3,
+		tol_rmsd: float = 1.2e-3,
+		use_symmetry: bool = False,
+		charge: int = 0,
+		multiplicity: int = 1,
+		title_lines: Optional[List[str]] = None,
+	):
+		'''
+		Saves the current Z-matrix as an ORCA input file for external optimisation.
+		'''
+		orca_input = PrintUtils.print_orca_extopt_input(self.zmat, self.zmat_conn, wrapper_path, self.constraints, maxcore_mb = maxcore_mb, nproc = nproc, scf_maxiter = scf_maxiter, scf_conv = scf_conv, geom_maxiter = geom_maxiter, geom_conv = geom_conv, tol_maxg = tol_maxg, tol_rmsg = tol_rmsg, tol_maxd = tol_maxd, tol_rmsd = tol_rmsd, use_symmetry = use_symmetry, charge = charge, multiplicity = multiplicity, title_lines = title_lines)
+		try:
+			with open(filename, 'w', encoding='utf-8') as f:
+				f.write(orca_input)
+		except IOError as e:
+			print(f"Error writing to {filename}: {e}")
+
+	## Functions for generating conformations for finetuning #######################################################
+				
+	@staticmethod
+	def sobol_nd_in_ranges(n_dim, n_samples, ranges, scramble=True, seed=None):
+		from scipy.stats import qmc
+	
+		"""
+		Generate a Sobol sequence within user-specified ranges on each dimension.
+	
+		Parameters
+		----------
+		n_dim : int
+			Number of dimensions.
+		n_samples : int
+			Number of Sobol samples to generate.
+		ranges : list[tuple[float, float]]
+			List of (lower, upper) bounds for each dimension.
+			Example: [(0,1), (-5,5), (100,200)]
+		scramble : bool, optional
+			Whether to use a scrambled Sobol sequence (better uniformity for finite n).
+		seed : int, optional
+			Random seed for reproducibility (only used if scramble=True).
+	
+		Returns
+		-------
+		samples : np.ndarray, shape (n_samples, n_dim)
+			Sobol samples scaled to the given ranges.
+		"""
+		if len(ranges) != n_dim:
+			raise ValueError("Length of 'ranges' must equal n_dim")
+	
+		# Initialise Sobol sampler
+		sampler = qmc.Sobol(d=n_dim, scramble=scramble, seed=seed)
+	
+		# Generate points in [0,1]^n
+		sobol_unit = sampler.random(n_samples)
+	
+		# Scale to user ranges
+		lower = np.array([lo for lo, hi in ranges])
+		upper = np.array([hi for lo, hi in ranges])
+		sobol_scaled = qmc.scale(sobol_unit, lower, upper)
+	
+		return sobol_scaled
+
+	@staticmethod
+	def ase_get_connectivity(atoms, bonding_cutoffs = None, print_flag = False):
+		from ase.neighborlist import neighbor_list, natural_cutoffs
+		'''
+		Determines the connectivity matrix of a molecule 
+		Based on code by BIT in CrystalSetupPy
+		'''
+		# Basic info
+		N = len(atoms.get_chemical_symbols())
+	
+		# Generate cutoffs if needed
+		if (bonding_cutoffs is None):
+			bonding_cutoffs = natural_cutoffs(atoms, mult=1.1)
+	
+		# Get the neighbours
+		at1, at2, = neighbor_list('ij', atoms,				   
+									bonding_cutoffs, 
+									self_interaction = False)
+		
+		# Conenctivity matrix
+		connectivity = np.zeros((N, N))
+		for i in range(len(at1)):
+			connectivity[at1[i]][at2[i]]=1
+	
+		# Print
+		if (print_flag):
+			#Header
+			print("	",end='')
+			for i in range(natms):
+				print("%3i " % int(i+1),end='')
+	
+			for i in range(natms):  # rows
+				print("\n%-3i " % int(i+1),end='')
+	
+				for j in range(natms): # cols
+					print("%3i " % connectivity[i][j],end='')
+			print("")
+	
+		return connectivity
+
+
+	def generate_sobol_conformations(self,
+									 n_conformations: int,
+									 seed: int = 345,
+									 frac_opt = 0.10, 
+									 path: str = "",
+									 name_pattern: str = "conf",
+									 mode: str = "orca",
+									 level_of_theory: str = "WB97M-D3BJ",
+									 basis_set: str = "def2-TZVPPD",
+									 maxcore_mb: int = 4000,
+									 nproc: int = 16) -> None:
+		"""
+		Generate n conformations by sampling constrained dihedral(s) with a Sobol sequence.
+		Intended for a gas-phase minimum with flexible torsions declared in self.constraints.dihedrals
+		as (dih_atom_index, None). This function writes input files for ORCA or Gaussian
+		only if the topological connectivity is preserved.
+		"""
+		import os
+		from copy import deepcopy
+		import random
+	
+		# --- Safety checks ---------------------------------------------------
+		if len(self.constraints.dihedrals) == 0:
+			raise ValueError("No dihedral constraints set. Populate self.constraints.dihedrals first.")
+	
+		# Reference connectivity from the starting geometry
+		connectivity_ref = ZMatrix.ase_get_connectivity(self.get_atoms())
+	
+		# Prepare ranges for each free dihedral (degrees)
+		n_dim = len(self.constraints.dihedrals)
+		ranges = [(0.0, 360.0)] * n_dim
+	
+		# Backup original state (we'll restore each iteration)
+		zmat_backup = deepcopy(self.zmat)
+		constraints_backup = deepcopy(self.constraints)
+	
+		# Sobol samples
+		samples = ZMatrix.sobol_nd_in_ranges(n_dim, n_conformations, ranges, scramble=False, seed=seed)
+
+		random.seed(seed)
+
+		num_128s = int(n_conformations * frac_opt)
+		num_zeros = n_conformations - num_128s  # ensures total length is exactly N
+
+		geom_maxiters = [0]*num_zeros + [128]*num_128s
+		random.shuffle(geom_maxiters)
+		conf_idx = 0
+		for i, sample in enumerate(samples):
+			
+			# --- Reset to the original geometry and constraints --------------
+			self.zmat = deepcopy(zmat_backup)
+			self.constraints = deepcopy(constraints_backup)
+	
+			# Build a fresh Constraints object with *values* for dihedrals
+			new_constraints = Constraints()
+			# Bonds and angles carry over unchanged
+			for b in self.constraints.bonds:
+				new_constraints.bonds.append(tuple(b))
+			for a in self.constraints.angles:
+				new_constraints.angles.append(tuple(a))
+			# Dihedrals get assigned the sampled values
+			for (dih_idx, _), val in zip(self.constraints.dihedrals, sample):
+				new_constraints.dihedrals.append((dih_idx, float(val)))
+	
+			# Install and apply to zmat (mutates self.zmat)
+			self.constraints = new_constraints
+			_ = self.apply_constraints_to_zmat(normalise_angles=True, strict_connectivity=True)
+			print(f'Generating conformation {i} with {new_constraints}')
+	
+			# Check topology preserved
+			connectivity_mod = ZMatrix.ase_get_connectivity(self.get_atoms())
+			if not np.array_equal(connectivity_mod, connectivity_ref):
+				# Skip conformations that break bonds/close new ones
+				print(f'Skipping conformation {i} due to changes in connectivity')
+				continue
+	
+			# Prepare output dir and filenames
+			subdir = os.path.join(path, f"{name_pattern}_{conf_idx}")
+			os.makedirs(subdir, exist_ok=True)
+	
+			if mode.lower() == "orca":
+				# If you extend your save_orca_input signature to accept LoT/basis, call it here.
+				# Example: self.save_orca_input(filename, level_of_theory, basis_set, maxcore_mb, nproc)
+				filename = os.path.join(subdir, f"{name_pattern}_{conf_idx}.inp")
+				try:
+					# Option A: if you KEEP your simple wrapper:
+					#   orca_input = PrintUtils.print_orca_input(self.zmat, self.zmat_conn, self.constraints,
+					#											level_of_theory, basis_set, maxcore_mb, nproc)
+					#   with open(filename, "w", encoding="utf-8") as f: f.write(orca_input)
+					# Option B: if you EXTEND save_orca_input to accept the parameters:
+					self.save_orca_input(filename, level_of_theory = level_of_theory, basis_set = basis_set, maxcore_mb = maxcore_mb, nproc = nproc, geom_maxiter = geom_maxiters[i])
+					print(f'Conformation {i} saved to {filename}')
+					conf_idx += 1
+				except TypeError:
+					# Back-compat path: older save_orca_input(filename) only
+					orca_input = PrintUtils.print_orca_input(self.zmat, self.zmat_conn, self.constraints,
+															 level_of_theory = level_of_theory, basis_set = basis_set, maxcore_mb = maxcore_mb, nproc = nproc, geom_maxiter = geom_maxiters[i])
+					conf_idx += 1
+					with open(filename, "w", encoding="utf-8") as f:
+						f.write(orca_input)
+	
+			elif mode.lower() == "gaussian":
+				filename = os.path.join(subdir, f"{name_pattern}_{i}.com")
+				preamble = f"""%mem={maxcore_mb}MB
+	%nprocshared={nproc}
+	#P {level_of_theory} {basis_set} Opt=CalcFC
+	
+	{self.name or 'Sobol conformation'}
+	
+	0 1
+	"""
+				self.save_gaussian_com(filename, preamble)
+				conf_idx += 1
+			else:
+				raise ValueError("mode must be 'orca' or 'gaussian'")
+	
+		# Restore original state at the end (not strictly necessary due to per-iter reset)
+		self.zmat = zmat_backup
+		self.constraints = constraints_backup
+		self.apply_constraints_to_zmat
+		

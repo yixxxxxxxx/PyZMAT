@@ -495,7 +495,7 @@ class ParseUtils:
 
 
 	
-	
+	### Functions for parsing orca output
 	# --------------------------- small helpers ---------------------------
 	@staticmethod
 	def _idx_or_none(tok: str) -> Optional[int]:
@@ -665,67 +665,67 @@ class ParseUtils:
 		return energy_eV
 
 	
-	@staticmethod
-	def _parse_forces(lines: List[str]) -> List[float]:
-		"""Return flat 3N forces (eV/Å) from the last CARTESIAN GRADIENT block."""
-		headers = []
-		for i in range(len(lines) - 2):
-			if DASH_RE.match(lines[i]) and TITLE_GRAD_RE.match(lines[i + 1]) and DASH_RE.match(lines[i + 2]):
-				headers.append(i)
-		if not headers:
-			raise ValueError("No 'CARTESIAN GRADIENT' block found.")
+	# @staticmethod
+	# def _parse_forces(lines: List[str]) -> List[float]:
+	# 	"""Return flat 3N forces (eV/Å) from the last CARTESIAN GRADIENT block."""
+	# 	headers = []
+	# 	for i in range(len(lines) - 2):
+	# 		if DASH_RE.match(lines[i]) and TITLE_GRAD_RE.match(lines[i + 1]) and DASH_RE.match(lines[i + 2]):
+	# 			headers.append(i)
+	# 	if not headers:
+	# 		raise ValueError("No 'CARTESIAN GRADIENT' block found.")
 		
-		start = headers[-1] + 3  # line after the header trio
+	# 	start = headers[-1] + 3  # line after the header trio
 		
-		rows = []
-		seen_any = False
-		for L in lines[start:]:
-			# Stop if we hit the next dashed separator *after* we've started reading rows
-			if seen_any and DASH_RE.match(L):
-				break
+	# 	rows = []
+	# 	seen_any = False
+	# 	for L in lines[start:]:
+	# 		# Stop if we hit the next dashed separator *after* we've started reading rows
+	# 		if seen_any and DASH_RE.match(L):
+	# 			break
 		
-			m = GRAD_LINE_RE.match(L)
-			if m:
-				seen_any = True
-				idx = int(m.group(1))      # 1-based atom index
-				fx = float(m.group(2))     # Ha/Bohr
-				fy = float(m.group(3))
-				fz = float(m.group(4))
-				rows.append((idx, fx, fy, fz))
-				continue
+	# 		m = GRAD_LINE_RE.match(L)
+	# 		if m:
+	# 			seen_any = True
+	# 			idx = int(m.group(1))      # 1-based atom index
+	# 			fx = float(m.group(2))     # Ha/Bohr
+	# 			fy = float(m.group(3))
+	# 			fz = float(m.group(4))
+	# 			rows.append((idx, fx, fy, fz))
+	# 			continue
 		
-			# If we haven't started, tolerate blanks/junk and keep scanning
-			if not seen_any:
-				if L.strip() == "":
-					continue
-				# Also tolerate label lines or spacing artifacts
-				if re.match(r'^\s*\d+\s+[A-Za-z]+\s*:\s*$', L):
-					# rare case: wrapped lines — keep scanning
-					continue
-				# otherwise just keep scanning until first match
-				continue
+	# 		# If we haven't started, tolerate blanks/junk and keep scanning
+	# 		if not seen_any:
+	# 			if L.strip() == "":
+	# 				continue
+	# 			# Also tolerate label lines or spacing artifacts
+	# 			if re.match(r'^\s*\d+\s+[A-Za-z]+\s*:\s*$', L):
+	# 				# rare case: wrapped lines — keep scanning
+	# 				continue
+	# 			# otherwise just keep scanning until first match
+	# 			continue
 		
-			# Once rows have started, a non-matching non-blank typically ends the table
-			if L.strip() == "":
-				# allow trailing blank; if more content follows it will trip the break above
-				continue
-			break
+	# 		# Once rows have started, a non-matching non-blank typically ends the table
+	# 		if L.strip() == "":
+	# 			# allow trailing blank; if more content follows it will trip the break above
+	# 			continue
+	# 		break
 		
-		if not rows:
-			raise ValueError("Gradient block header found, but no gradient rows parsed.")
+	# 	if not rows:
+	# 		raise ValueError("Gradient block header found, but no gradient rows parsed.")
 		
-		# Order by atom index and convert units
-		rows.sort(key=lambda t: t[0])
-		factor = Ha / Bohr  # Ha/Bohr -> eV/Å
-		forces = []
-		for _, fx, fy, fz in rows:
-			forces.extend([fx * factor, fy * factor, fz * factor])
-		return forces
+	# 	# Order by atom index and convert units
+	# 	rows.sort(key=lambda t: t[0])
+	# 	factor = Ha / Bohr  # Ha/Bohr -> eV/Å
+	# 	forces = []
+	# 	for _, fx, fy, fz in rows:
+	# 		forces.extend([fx * factor, fy * factor, fz * factor])
+	# 	return forces
 	
 	
 	# --------------------------- public API ---------------------------
 	@staticmethod
-	def parse_orca_output(orcarpt_path: str):
+	def parse_orca_output_depr(orcarpt_path: str):
 		"""
 		Parse an ORCA output file and return:
 			zmat, zmat_conn, constraints, energy_eV, forces_eV_per_A
@@ -759,3 +759,462 @@ class ParseUtils:
 		forces_eV_per_A = ParseUtils._parse_forces(lines)
 	
 		return zmat, zmat_conn, constraints, energy_eV, forces_eV_per_A
+
+	def parse_orca_input(filepath: str):
+		"""
+		Parse an ORCA input using a gzmt Z-matrix and a %GEOM CONSTRAINTS block.
+
+		Returns
+		-------
+		zmat : List[List[ symbol:str, bond:Optional[float], angle:Optional[float], dihedral:Optional[float] ]]
+		zmat_conn : List[Tuple[ symbol:str, b_ref:Optional[int], a_ref:Optional[int], d_ref:Optional[int] ]]
+			All reference indices are 0-based (None where absent).
+		constraints : dict
+			{"bonds":[(row_idx, None)], "angles":[(row_idx, None)], "dihedrals":[(row_idx, None)]}
+			Indices are 0-based and refer to the Z-matrix row being fixed; value None => use current zmat value.
+		"""
+		# ---------- helpers ----------
+		def clean(s: str) -> str:
+			return s.strip()
+
+		def is_blank_or_comment(s: str) -> bool:
+			t = s.strip()
+			return (not t) or t.startswith("#")  # tolerate your '#...' headers
+
+		def to_float(tok: str) -> float:
+			# Tolerate Fortran 'D' exponents if they appear
+			return float(tok.replace('d', 'E').replace('D', 'E'))
+
+		def wrap_dihedral(x: float) -> float:
+			# Normalise into (-180, 180]
+			while x <= -180.0:
+				x += 360.0
+			while x > 180.0:
+				x -= 360.0
+			return x
+
+		# ---------- read file ----------
+		with open(filepath, "r", encoding="utf-8") as f:
+			lines = f.readlines()
+
+		# ---------- locate gzmt block ----------
+		gzmt_start = None
+		for i, ln in enumerate(lines):
+			t = ln.strip().lower()
+			if t.startswith("*") and "gzmt" in t.split():
+				gzmt_start = i
+				break
+		if gzmt_start is None:
+			raise ValueError("Could not find '* gzmt' line.")
+
+		gzmt_end = None
+		for i in range(gzmt_start + 1, len(lines)):
+			if lines[i].strip() == "*":
+				gzmt_end = i
+				break
+		if gzmt_end is None:
+			raise ValueError("Could not find terminating '*' after gzmt block.")
+
+		z_lines = [ln for ln in lines[gzmt_start + 1:gzmt_end] if not is_blank_or_comment(ln)]
+
+		# ---------- parse gzmt block ----------
+		zmat: List[List[object]] = []
+		zmat_conn: List[Tuple[object, Optional[int], Optional[int], Optional[int]]] = []
+
+		for i, raw in enumerate(z_lines):
+			toks = raw.split()
+			sym = toks[0]
+
+			if i == 0:
+				# first atom: just the symbol
+				zmat.append([sym, None, None, None])
+				zmat_conn.append((sym, None, None, None))
+			elif i == 1:
+				# sym, b_ref(1-based), b_val
+				b_ref = int(toks[1]) - 1
+				b_val = to_float(toks[2])
+				zmat.append([sym, b_val, None, None])
+				zmat_conn.append((sym, b_ref, None, None))
+			elif i == 2:
+				# sym, b_ref, b_val, a_ref, a_val
+				b_ref = int(toks[1]) - 1
+				b_val = to_float(toks[2])
+				a_ref = int(toks[3]) - 1
+				a_val = to_float(toks[4])
+				zmat.append([sym, b_val, a_val, None])
+				zmat_conn.append((sym, b_ref, a_ref, None))
+			else:
+				# sym, b_ref, b_val, a_ref, a_val, d_ref, d_val
+				b_ref = int(toks[1]) - 1
+				b_val = to_float(toks[2])
+				a_ref = int(toks[3]) - 1
+				a_val = to_float(toks[4])
+				d_ref = int(toks[5]) - 1
+				d_val = wrap_dihedral(to_float(toks[6]))
+				zmat.append([sym, b_val, a_val, d_val])
+				zmat_conn.append((sym, b_ref, a_ref, d_ref))
+
+		# ---------- locate %GEOM CONSTRAINTS block ----------
+		# We assume: %GEOM ... CONSTRAINTS ... END  (then later another END for %GEOM)
+		geom_start = None
+		for i, ln in enumerate(lines):
+			if ln.strip().lower().startswith("%geom"):
+				geom_start = i
+				break
+
+		constraints_block_lines: List[str] = []
+		if geom_start is not None:
+			# find CONSTRAINTS within %GEOM, then gather until the next 'END'
+			i = geom_start + 1
+			while i < len(lines):
+				t = lines[i].strip()
+				if t.lower() == "constraints":
+					# collect following lines until a line 'END'
+					j = i + 1
+					while j < len(lines):
+						tj = lines[j].strip()
+						if tj.lower() == "end":
+							break
+						if not is_blank_or_comment(tj):
+							constraints_block_lines.append(lines[j])
+						j += 1
+					break
+				# stop if we leave %GEOM by hitting its END
+				if t.lower() == "end":
+					break
+				i += 1
+
+		# ---------- parse constraints (already 0-indexed as per your note) ----------
+		bonds_c: List[Tuple[int, Optional[float]]] = []
+		ang_c:   List[Tuple[int, Optional[float]]] = []
+		dih_c:   List[Tuple[int, Optional[float]]] = []
+
+		def parse_braced(line: str) -> Optional[List[str]]:
+			# Expect something like: { D 6 5 1 0 C }
+			s = line.strip()
+			if not s.startswith("{") or not s.endswith("}"):
+				return None
+			inner = s[1:-1].strip()
+			# split by whitespace
+			return [tok for tok in inner.split() if tok]
+
+		# quick accessor for row's refs
+		def row_refs(row: int):
+			_, jb, ka, ld = zmat_conn[row]
+			return jb, ka, ld
+
+		for ln in constraints_block_lines:
+			toks = parse_braced(ln)
+			if not toks:
+				continue
+			typ = toks[0].upper()
+			# minimal validation
+			if typ not in ("B", "A", "D"):
+				continue
+			if len(toks) < 6:
+				continue
+			# ORCA constraints in your setup are 0-indexed already
+			try:
+				i_idx = int(toks[1])  # row / anchor atom in z-matrix order
+				j_idx = int(toks[2])
+				k_idx = int(toks[3])
+				l_idx = int(toks[4])
+			except ValueError:
+				continue  # skip malformed
+
+			# Ensure in range
+			if not (0 <= i_idx < len(zmat_conn)):
+				continue
+
+			jb, ka, ld = row_refs(i_idx)
+
+			if typ == "B":
+				# row i has a bond DOF if jb is not None; match the referenced partner
+				if jb is not None and jb == j_idx:
+					bonds_c.append((i_idx, None))
+			elif typ == "A":
+				if jb is not None and ka is not None and jb == j_idx and ka == k_idx:
+					ang_c.append((i_idx, None))
+			elif typ == "D":
+				if jb is not None and ka is not None and ld is not None and jb == j_idx and ka == k_idx and ld == l_idx:
+					dih_c.append((i_idx, None))
+
+		constraints = Constraints(bonds = bonds_c, angles = ang_c, dihedrals = dih_c)
+		return zmat, zmat_conn, constraints
+	
+	# --------------------------- small helpers (unchanged) ---------------------------
+	@staticmethod
+	def _idx_or_none(tok: str) -> Optional[int]:
+		i = int(tok)
+		return None if i == 0 else (i - 1)
+
+	@staticmethod
+	def _strip_inputfile_prefix(line: str) -> str:
+		"""Lines inside INPUT FILE are often like: '| 41>   text'. Strip the left prefix."""
+		# Remove an initial pipe + counter prefix if present.
+		m = re.match(r'^\s*\|\s*\d+>\s*(.*)$', line)
+		return m.group(1) if m else line.rstrip("\n")
+
+	@staticmethod
+	def _is_elem(token: str) -> bool:
+		# Very lenient: 1–2 letter element symbol (H, He, C, Si, ...); ORCA accepts others too,
+		# but this is good enough for gzmt parsing. You can widen if needed.
+		return bool(re.match(r'^[A-Za-z]{1,2}$', token))
+
+	# --------------------------- block finders ---------------------------
+	@staticmethod
+	def _find_first_inputfile_block(lines: List[str]) -> Optional[Tuple[int, int]]:
+		"""Return [start,end) of the FIRST INPUT FILE block delimited by '=' lines."""
+		for i in range(len(lines) - 2):
+			if EQ_RE.match(lines[i]) and TITLE_INPUTFILE_RE.search(lines[i + 1]) and EQ_RE.match(lines[i + 2]):
+				# find the next '=' that closes this block
+				end = None
+				for j in range(i + 3, len(lines)):
+					if EQ_RE.match(lines[j]):
+						end = j
+						break
+				return (i, len(lines) if end is None else end)
+		return None
+
+	@staticmethod
+	def _find_final_xyz_after_stationary_point(lines: List[str]) -> Tuple[int, int]:
+		"""
+		Find the CARTESIAN COORDINATES (ANGSTROEM) table that appears after the last
+		'FINAL ENERGY EVALUATION AT THE STATIONARY POINT' header. Return [start,end).
+		As a fallback, use the last 'CARTESIAN COORDINATES (ANGSTROEM)' in the file.
+		"""
+		# 1) Find last stationary-point banner
+		last_banner = None
+		banner_re = re.compile(r'FINAL ENERGY EVALUATION AT THE STATIONARY POINT', re.I)
+		for i, L in enumerate(lines):
+			if banner_re.search(L):
+				last_banner = i
+
+		def _coords_block_from(idx0: int) -> Optional[Tuple[int, int]]:
+			title_re = re.compile(r'^\s*-+\s*$')
+			coords_title = re.compile(r'^\s*CARTESIAN COORDINATES\s*\(ANGSTROEM\)\s*$', re.I)
+			# search forward for the title trio (----- / title / -----)
+			for i in range(idx0, len(lines) - 2):
+				if title_re.match(lines[i]) and coords_title.match(lines[i + 1]) and title_re.match(lines[i + 2]):
+					start = i + 3
+					end = start
+					while end < len(lines):
+						L = lines[end].rstrip("\n")
+						if not L.strip():
+							break
+						# typical coord line starts with an element symbol
+						m = re.match(r'^\s*([A-Za-z]{1,3})\s+([-+0-9.eE]+)\s+([-+0-9.eE]+)\s+([-+0-9.eE]+)\s*$', L)
+						if not m:
+							break
+						end += 1
+					return (start, end)
+			return None
+
+		if last_banner is not None:
+			block = _coords_block_from(last_banner)
+			if block:
+				return block
+
+		# Fallback: last coordinates table anywhere
+		last = None
+		title_re = re.compile(r'^\s*-+\s*$')
+		coords_title = re.compile(r'^\s*CARTESIAN COORDINATES\s*\(ANGSTROEM\)\s*$', re.I)
+		for i in range(len(lines) - 2):
+			if title_re.match(lines[i]) and coords_title.match(lines[i + 1]) and title_re.match(lines[i + 2]):
+				start = i + 3
+				end = start
+				while end < len(lines):
+					L = lines[end].rstrip("\n")
+					if not L.strip():
+						break
+					m = re.match(r'^\s*([A-Za-z]{1,3})\s+([-+0-9.eE]+)\s+([-+0-9.eE]+)\s+([-+0-9.eE]+)\s*$', L)
+					if not m:
+						break
+					end += 1
+				last = (start, end)
+		if last is None:
+			raise ValueError("Could not locate a 'CARTESIAN COORDINATES (ANGSTROEM)' table.")
+		return last
+
+	# --------------------------- parsers for new requirement ---------------------------
+	@staticmethod
+	def _parse_gzmt_zmat_conn_from_inputfile(lines: List[str], start: int, end: int) -> List[Tuple[str, Optional[int], Optional[int], Optional[int]]]:
+		"""
+		Inside the INPUT FILE block, locate '* gzmt charge mult' and parse the following
+		Z-matrix lines to produce zmat_conn [(sym, rb, ra, rd), ...] using zero-based refs.
+		Stops at the terminating '*' (end of gzmt block) or when lines stop matching.
+		"""
+		zconn: List[Tuple[str, Optional[int], Optional[int], Optional[int]]] = []
+
+		# find the '* gzmt' line
+		gzmt_line = None
+		gzmt_re = re.compile(r'^\*\s*gzmt\b', re.I)
+		for i in range(start, end):
+			payload = ParseUtils._strip_inputfile_prefix(lines[i]).strip()
+			if gzmt_re.match(payload):
+				gzmt_line = i
+				break
+		if gzmt_line is None:
+			raise ValueError("No '* gzmt' block found inside the INPUT FILE section.")
+
+		# walk forward, parse each Z-matrix line until the terminating '*'
+		for j in range(gzmt_line + 1, end):
+			raw = ParseUtils._strip_inputfile_prefix(lines[j]).strip()
+			if not raw:
+				continue
+			if raw.startswith('*'):
+				break  # end of gzmt block
+
+			toks = raw.split()
+			if not toks or not ParseUtils._is_elem(toks[0]):
+				# gzmt block ended (or unexpected line)
+				break
+
+			sym = toks[0]
+			rb = ra = rd = None
+
+			# tokens layout (variable length):
+			# 1: sym
+			# 2-3: idxB, valB
+			# 4-5: idxA, valA
+			# 6-7: idxD, valD
+			# 0 means "no reference"
+			if len(toks) >= 3:
+				try:
+					rb = ParseUtils._idx_or_none(toks[1])
+				except ValueError:
+					rb = None
+			if len(toks) >= 5:
+				try:
+					ra = ParseUtils._idx_or_none(toks[3])
+				except ValueError:
+					ra = None
+			if len(toks) >= 7:
+				try:
+					rd = ParseUtils._idx_or_none(toks[5])
+				except ValueError:
+					rd = None
+
+			zconn.append((sym, rb, ra, rd))
+
+		if not zconn:
+			raise ValueError("Found '* gzmt' but no parsable Z-matrix lines.")
+		return zconn
+
+	@staticmethod
+	def _parse_final_atoms(lines: List[str]) -> Atoms:
+		"""
+		Build an ASE Atoms from the final 'CARTESIAN COORDINATES (ANGSTROEM)' table
+		that follows the stationary-point banner.
+		"""
+		start, end = ParseUtils._find_final_xyz_after_stationary_point(lines)
+		symbols: List[str] = []
+		positions: List[Tuple[float, float, float]] = []
+		row_re = re.compile(r'^\s*([A-Za-z]{1,3})\s+([-+0-9.eE]+)\s+([-+0-9.eE]+)\s+([-+0-9.eE]+)\s*$')
+		for k in range(start, end):
+			m = row_re.match(lines[k])
+			if not m:
+				break
+			symbols.append(m.group(1))
+			x = float(m.group(2)); y = float(m.group(3)); z = float(m.group(4))
+			positions.append((x, y, z))
+		if not symbols:
+			raise ValueError("Final coordinates table located, but no rows parsed.")
+		return Atoms(symbols=symbols, positions=positions)
+
+	# --------------------------- existing energy/forces parsers (unchanged) ---------------------------
+	@staticmethod
+	def _parse_energy(lines: List[str]) -> float:
+		energy_eV = None
+		for L in lines:
+			m = ENERGY_RE.search(L)
+			if m:
+				energy_eV = float(m.group(1)) * Ha
+		if energy_eV is None:
+			raise ValueError("Final single point energy not found.")
+		return energy_eV
+
+	@staticmethod
+	def _parse_forces(lines: List[str]) -> List[float]:
+		headers = []
+		for i in range(len(lines) - 2):
+			if DASH_RE.match(lines[i]) and TITLE_GRAD_RE.match(lines[i + 1]) and DASH_RE.match(lines[i + 2]):
+				headers.append(i)
+		if not headers:
+			raise ValueError("No 'CARTESIAN GRADIENT' block found.")
+		start = headers[-1] + 3
+		rows = []
+		seen_any = False
+		for L in lines[start:]:
+			if seen_any and DASH_RE.match(L):
+				break
+			m = GRAD_LINE_RE.match(L)
+			if m:
+				seen_any = True
+				idx = int(m.group(1))
+				fx = float(m.group(2)); fy = float(m.group(3)); fz = float(m.group(4))
+				rows.append((idx, fx, fy, fz))
+				continue
+			if not seen_any:
+				if L.strip() == "" or re.match(r'^\s*\d+\s+[A-Za-z]+\s*:\s*$', L):
+					continue
+				continue
+			if L.strip() == "":
+				continue
+			break
+		if not rows:
+			raise ValueError("Gradient block header found, but no gradient rows parsed.")
+		rows.sort(key=lambda t: t[0])
+		# factor = Ha / Bohr 
+		factor = 27.2113834 / 0.5291772083 * -1
+		forces = []
+		# Known phonomenon that ORCA builds Cartesian coordinates differently from ZmatUtils.zmat_2_atoms() with y and z sign-flipped, therefore multiplying by R = diag(1, -1, -1) to compensate for this
+		R = np.diag([1, -1, -1])
+		for _, fx, fy, fz in rows:
+			forces.extend([fx * factor, fy * factor, fz * factor])
+			#forces.extend([fx, fy, fz])
+		forces = np.array(forces).reshape(-1, 3) @ R.T
+		return forces
+
+	# --------------------------- public API ---------------------------
+	@staticmethod
+	def parse_orca_output(orcarpt_path: str):
+		"""
+		Parse an ORCA output file and return:
+			zmat, zmat_conn, constraints, energy_eV, forces_eV_per_A
+
+		Behaviour (updated):
+		  - zmat_conn: parsed from the **top** INPUT FILE → '* gzmt …' block.
+		  - atoms: parsed from the **final** 'CARTESIAN COORDINATES (ANGSTROEM)'
+		    that appears after 'FINAL ENERGY EVALUATION AT THE STATIONARY POINT'.
+		  - zmat: built via ZmatUtils.atoms_2_zmat(atoms, zmat_conn).
+		  - constraints: parsed from the same (first) INPUT FILE block if present.
+		  - Energy & forces: unchanged (last reported).
+		"""
+		with open(orcarpt_path, 'r', encoding='utf-8', errors='ignore') as f:
+			lines = f.readlines()
+
+		# INPUT FILE (first) → constraints + gzmt connectivity
+		inp_bounds = ParseUtils._find_first_inputfile_block(lines)
+		if inp_bounds is None:
+			raise ValueError("INPUT FILE block not found at the top of the output.")
+		ifirst, ilast = inp_bounds
+
+		# constraints from the same first INPUT FILE block
+		constraints = ParseUtils._parse_constraints_from_inputfile(lines, ifirst, ilast)
+
+		# zmat_conn from '* gzmt'
+		zmat_conn = ParseUtils._parse_gzmt_zmat_conn_from_inputfile(lines, ifirst, ilast)
+
+		# final xyz → ASE Atoms
+		atoms = ParseUtils._parse_final_atoms(lines)
+
+		# zmat from Atoms + connectivity
+		zmat = ZmatUtils.atoms_2_zmat(atoms, zmat_conn)
+
+		# energy & forces from the usual places
+		energy_eV = ParseUtils._parse_energy(lines)
+		forces_eV_per_A = ParseUtils._parse_forces(lines)
+
+		return zmat, zmat_conn, constraints, energy_eV, forces_eV_per_A
+

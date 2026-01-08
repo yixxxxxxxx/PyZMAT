@@ -202,6 +202,7 @@ class PrintUtils:
 		tol_maxd: float = 1.8e-3,
 		tol_rmsd: float = 1.2e-3,
 		use_symmetry: bool = False,
+		scs: bool = True,
 		charge: int = 0,
 		multiplicity: int = 1,
 		title_lines: Optional[List[str]] = None,
@@ -241,14 +242,34 @@ class PrintUtils:
 					self.dihedrals = []
 			constraints = DummyConstraints()
 
-
-		route_line: str = "! " + level_of_theory + basis_set + " AutoAux RIJCOSX OPT D3BJ DEFGRID3"
+		if geom_maxiter == 0:
+			if basis_set.startswith('def2'):
+				if 'RI-MP2' in level_of_theory.upper():
+					ri_aux = basis_set + "/C"
+					route_line: str = "! " + level_of_theory + " " + basis_set + " " + ri_aux +" RIJCOSX def2/J OPT D3BJ DEFGRID3 ENGRAD"
+				else:	
+					route_line: str = "! " + level_of_theory + " " + basis_set + " def2/J RIJCOSX D3BJ DEFGRID3 ENGRAD"				
+			else:
+				route_line: str = "! " + level_of_theory + " " + basis_set + " AutoAux RIJCOSX D3BJ DEFGRID3 ENGRAD"
+		else:
+			if basis_set.startswith('def2'):
+				if 'RI-MP2' in level_of_theory.upper():
+					ri_aux = basis_set + "/C"
+					route_line: str = "! " + level_of_theory + " " + basis_set + " " + ri_aux +" RIJCOSX def2/J OPT D3BJ DEFGRID3"
+				else:
+					route_line: str = "! " + level_of_theory + " " + basis_set + " def2/J RIJCOSX OPT D3BJ DEFGRID3"
+			else:
+				route_line: str = "! " + level_of_theory + " " + basis_set + " AutoAux RIJCOSX D3BJ DEFGRID3 ENGRAD"
 		# ---------- Build header ----------
 		lines: List[str] = []
 		lines.append("# Calculation type")
 		lines.append(route_line)
 		lines.append("")
 		lines.append("# Calculation specifications")
+		if 'MP2' in level_of_theory.upper() and scs:
+			lines.append("%MP2")
+			lines.append("   DoSCS     TRUE")
+			lines.append("END")
 		lines.append(f"%MaxCore {maxcore_mb}")
 		lines.append("%PAL")
 		lines.append(f"   NPROC {nproc}")
@@ -260,56 +281,57 @@ class PrintUtils:
 		lines.append(f"   MAXITER {scf_maxiter}")
 		lines.append(f"   CONVERGENCE {scf_conv}")
 		lines.append("END")
-		lines.append("%GEOM")
-		lines.append(f"   MAXITER     {geom_maxiter}")
-		lines.append(f"   CONVERGENCE     {geom_conv}")
-		lines.append(f"   TolMaxG     {tol_maxg:.6f}")
-		lines.append(f"   TolRMSG     {tol_rmsg:.6f}")
-		lines.append(f"   TolMaxD     {tol_maxd:.6f}")
-		lines.append(f"   TolRMSD     {tol_rmsd:.6f}")
-
-		# ---------- Constraints (0-indexed as per your convention) ----------
-		def add_constraint_block():
-			# Gather constraint lines, deriving j/k/l from zmat_conn
-			c_lines: List[str] = []
-
-			# Bonds
-			for (row, _target) in constraints.get("bonds", []):
-				if not (0 <= row < len(zmat_conn)):
-					continue
-				_, jb, _, _ = zmat_conn[row]
-				if jb is None:
-					continue
-				# ORCA constraints we output 0-indexed (your rule)
-				c_lines.append(f"   {{ B {row} {jb} C }}")
-
-			# Angles
-			for (row, _target) in constraints.get("angles", []):
-				if not (0 <= row < len(zmat_conn)):
-					continue
-				_, jb, ka, _ = zmat_conn[row]
-				if jb is None or ka is None:
-					continue
-				c_lines.append(f"   {{ A {row} {jb} {ka} C }}")
-
-			# Dihedrals
-			for (row, _target) in constraints.get("dihedrals", []):
-				if not (0 <= row < len(zmat_conn)):
-					continue
-				_, jb, ka, ld = zmat_conn[row]
-				if jb is None or ka is None or ld is None:
-					continue
-				c_lines.append(f"   {{ D {row} {jb} {ka} {ld} C }}")
-
-			return c_lines
-
-		cons_lines = add_constraint_block()
-		if cons_lines:
-			lines.append("   CONSTRAINTS")
-			lines.extend(cons_lines)
-			lines.append("   END")  # end of CONSTRAINTS
-
-		lines.append("END")  # end of %GEOM
+		if geom_maxiter != 0:
+			lines.append("%GEOM")
+			lines.append(f"   MAXITER     {geom_maxiter}")
+			lines.append(f"   CONVERGENCE     {geom_conv}")
+			lines.append(f"   TolMaxG     {tol_maxg:.6f}")
+			lines.append(f"   TolRMSG     {tol_rmsg:.6f}")
+			lines.append(f"   TolMaxD     {tol_maxd:.6f}")
+			lines.append(f"   TolRMSD     {tol_rmsd:.6f}")
+	
+			# ---------- Constraints (0-indexed as per your convention) ----------
+			def add_constraint_block():
+				# Gather constraint lines, deriving j/k/l from zmat_conn
+				c_lines: List[str] = []
+	
+				# Bonds
+				for (row, _target) in constraints.bonds:
+					if not (0 <= row < len(zmat_conn)):
+						continue
+					_, jb, _, _ = zmat_conn[row]
+					if jb is None:
+						continue
+					# ORCA constraints we output 0-indexed (your rule)
+					c_lines.append(f"   {{ B {row} {jb} C }}")
+	
+				# Angles
+				for (row, _target) in constraints.angles:
+					if not (0 <= row < len(zmat_conn)):
+						continue
+					_, jb, ka, _ = zmat_conn[row]
+					if jb is None or ka is None:
+						continue
+					c_lines.append(f"   {{ A {row} {jb} {ka} C }}")
+	
+				# Dihedrals
+				for (row, _target) in constraints.dihedrals:
+					if not (0 <= row < len(zmat_conn)):
+						continue
+					_, jb, ka, ld = zmat_conn[row]
+					if jb is None or ka is None or ld is None:
+						continue
+					c_lines.append(f"   {{ D {row} {jb} {ka} {ld} C }}")
+	
+				return c_lines
+	
+			cons_lines = add_constraint_block()
+			if cons_lines:
+				lines.append("   CONSTRAINTS")
+				lines.extend(cons_lines)
+				lines.append("   END")  # end of CONSTRAINTS
+	
+			lines.append("END")  # end of %GEOM
 		lines.append("")
 
 		# ---------- Title (optional) ----------
@@ -365,13 +387,13 @@ class PrintUtils:
 	def print_orca_extopt_input(
 		zmat: List[List[object]],
 		zmat_conn: List[Tuple[object, Optional[int], Optional[int], Optional[int]]],
+		wrapper_path,
 		constraints = None,
 		*,
-		maxcore_mb: int = 4000,
-		nproc: int = 8,
+		maxcore_mb: int = 1000,
+		nproc: int = 1,
 		scf_maxiter: int = 256,
 		scf_conv: str = "STRONG",
-		wrapper_path: str = "/rds/general/user/yh6324/home/test/orca_opt_hpc/test_0/run_mace.sh",
 		Ext_Params: str = "",
 		geom_maxiter: int = 128,
 		geom_conv: str = "TIGHT",
@@ -439,8 +461,8 @@ class PrintUtils:
 		lines.append(f"   CONVERGENCE {scf_conv}")
 		lines.append("END")
 		lines.append("%METHOD")
-		lines.append(f"   ProgExt {wrapper_path}")
-		lines.append(f"   ExtParams {Ext_Params}")
+		lines.append(f'   ProgExt "{wrapper_path}"')
+		lines.append(f'   ExtParams "{Ext_Params}"')
 		lines.append("END")
 		lines.append("%GEOM")
 		lines.append(f"   MAXITER     {geom_maxiter}")
@@ -456,7 +478,7 @@ class PrintUtils:
 			c_lines: List[str] = []
 
 			# Bonds
-			for (row, _target) in constraints.get("bonds", []):
+			for (row, _target) in constraints.bonds:
 				if not (0 <= row < len(zmat_conn)):
 					continue
 				_, jb, _, _ = zmat_conn[row]
@@ -466,7 +488,7 @@ class PrintUtils:
 				c_lines.append(f"   {{ B {row} {jb} C }}")
 
 			# Angles
-			for (row, _target) in constraints.get("angles", []):
+			for (row, _target) in constraints.angles:
 				if not (0 <= row < len(zmat_conn)):
 					continue
 				_, jb, ka, _ = zmat_conn[row]
@@ -475,7 +497,7 @@ class PrintUtils:
 				c_lines.append(f"   {{ A {row} {jb} {ka} C }}")
 
 			# Dihedrals
-			for (row, _target) in constraints.get("dihedrals", []):
+			for (row, _target) in constraints.dihedrals:
 				if not (0 <= row < len(zmat_conn)):
 					continue
 				_, jb, ka, ld = zmat_conn[row]
@@ -567,8 +589,8 @@ class PrintUtils:
 		# header line
 		lines = [(
 			f'\n{n_atoms}\n'
-			f'Properties=species:S:1:pos:R:3:molID:I:1:forces:R:3 '
-			f'Nmols=1 Comp={comp} energy={energy:.16f} pbc="{pbc_flags}"'
+			f'Properties=species:S:1:pos:R:3:molID:I:1:forces_ref:R:3 '
+			f'Nmols=1 Comp={comp} energy_ref={energy:.16f} pbc="{pbc_flags}"'
 		)]
 
 		# atom lines (molID always 0)
