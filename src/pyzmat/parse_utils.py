@@ -6,6 +6,7 @@ import numpy as np
 from ase import Atoms
 from ase.units import Bohr, Ha
 from typing import List, Tuple, Optional
+import warnings
 
 from .constraints import Constraints
 from .zmat_utils import ZmatUtils
@@ -478,7 +479,17 @@ class ParseUtils:
         for L in reversed(lines):
             if L.strip().startswith("Normal termination"):
                 normal_term = True
-            if L.strip().startswith("SCF Done:"):
+            # I think E2 only appears in MP2 calculations and lives on the same line as EUMP2 (which is what we want)
+            if L.strip().startswith("E2"):
+                parts = L.split()
+                try:
+                    # Python can't read fortran double format normally so have to convert
+                    energy = float(parts[5].replace("D", "E").replace("d", "E")) * Ha
+                except Exception:
+                    pass
+                if energy is not None:
+                    break
+            elif L.strip().startswith("SCF Done:"):
                 parts = L.split()
                 try:
                     energy = float(parts[4]) * Ha
@@ -499,6 +510,222 @@ class ParseUtils:
             return zmat, zmat_conn, forces, energy
 
 
+    @staticmethod
+    def parse_gaussian_log_cart(filename, check_calc=False):
+        """
+        Parse a Gaussian .log optimised run, extracting:
+        - symbolic Z‐matrix → zmat_conn and param names
+        - Variables/Constants → param values
+        - Optimized Parameters → updated internal coords & forces
+        - final SCF Done energy
+        - final Cartesian forces block (Hartrees/Bohr)
+
+        Returns (zmat, zmat_conn, forces_cart, energy[, normal_termination]).
+        """
+        with open(filename, "r") as f:
+            lines = f.readlines()
+
+        # 1) Symbolic Z-matrix
+        zmat_conn = []
+        param_names = []
+        in_z = False
+        skip = False
+        for L in lines:
+            if "Symbolic Z-matrix:" in L:
+                in_z = True
+                skip = True
+                continue
+            if in_z:
+                if skip:
+                    skip = False
+                    continue
+                if L.strip().lower().startswith("variables:"):
+                    break
+                if not L.strip():
+                    continue
+                toks = L.split()
+                sym = re.match(r"([A-Za-z]+)", toks[0]).group(1)
+                if len(toks) == 1:
+                    zmat_conn.append((sym, None, None, None))
+                    param_names.append((None, None, None))
+                elif len(toks) == 3:
+                    b, bp = int(toks[1]) - 1, toks[2]
+                    zmat_conn.append((sym, b, None, None))
+                    param_names.append((bp, None, None))
+                elif len(toks) == 5:
+                    b, bp, a, ap = int(toks[1]) - 1, toks[2], int(toks[3]) - 1, toks[4]
+                    zmat_conn.append((sym, b, a, None))
+                    param_names.append((bp, ap, None))
+                else:
+                    b, bp, a, ap, d, dp = (
+                        int(toks[1]) - 1, toks[2], int(toks[3]) - 1,
+                        toks[4], int(toks[5]) - 1, toks[6]
+                    )
+                    zmat_conn.append((sym, b, a, d))
+                    param_names.append((bp, ap, dp))
+
+        # 2) Variables & Constants
+        var_dict = {}
+        in_v = in_c = False
+        for L in lines:
+            l = L.strip().lower()
+            if l.startswith("variables:"):
+                in_v, in_c = True, False
+                continue
+            if l.startswith("constants:"):
+                in_v, in_c = False, True
+                continue
+            if in_v or in_c:
+                parts = L.split()
+                if len(parts) >= 2:
+                    try:
+                        var_dict[parts[0]] = float(parts[1])
+                    except ValueError:
+                        pass
+
+        # 3) Optimized Parameters (no longer parsing internal-coordinate forces here)
+        opt_block = False
+        opt_params = {}
+        for L in lines:
+            if "Optimized Parameters" in L:
+                opt_block = True
+                continue
+            if opt_block:
+                if not L.strip().startswith("!"):
+                    continue
+                clean = L.strip("! \n")
+                parts = clean.split()
+                if len(parts) >= 2:
+                    key = parts[0]
+                    try:
+                        val = float(parts[1])
+                        opt_params[key] = val
+                    except ValueError:
+                        pass
+
+        var_dict.update(opt_params)
+
+        # build final zmat values
+        zmat = []
+        for i, ((sym, b, a, d), (bp, ap, dp)) in enumerate(zip(zmat_conn, param_names)):
+            if i == 0:
+                zmat.append([sym, None, None, None])
+            elif i == 1:
+                zmat.append([sym, var_dict.get(bp), None, None])
+            elif i == 2:
+                zmat.append([sym, var_dict.get(bp), var_dict.get(ap), None])
+            else:
+                zmat.append([sym,
+                            var_dict.get(bp),
+                            var_dict.get(ap),
+                            var_dict.get(dp)])
+
+        # 3b) Final Cartesian forces block (use the final occurrence)
+        #
+        # Block looks like:
+        #  -------------------------------------------------------------------
+        #  Center     Atomic                   Forces (Hartrees/Bohr)
+        #  Number     Number              X              Y              Z
+        #  -------------------------------------------------------------------
+        #       1       16          -0.000057061    0.000075949    0.000034252
+        #  ...
+        #  -------------------------------------------------------------------
+        #  Cartesian Forces:  Max     ... RMS ...
+        #
+        forces_cart = None
+        header_key = "Forces (Hartrees/Bohr)"
+        sep = "-------------------------------------------------------------------"
+
+        # find last header line index
+        last_header_i = None
+        for i in range(len(lines) - 1, -1, -1):
+            if header_key in lines[i]:
+                last_header_i = i
+                break
+
+        if last_header_i is not None:
+            data = []
+            # after the header there are typically two lines + separator, but be robust:
+            # scan forward until we hit a separator line after having started collecting data,
+            # or until the "Cartesian Forces:" summary line.
+            started = False
+            for j in range(last_header_i + 1, len(lines)):
+                Lj = lines[j].rstrip("\n")
+                s = Lj.strip()
+
+                if s.startswith("Cartesian Forces:"):
+                    break
+
+                if s.startswith(sep):
+                    if started:
+                        break
+                    continue
+
+                if not s:
+                    continue
+
+                parts = s.split()
+                # expected: center, atomic_number, fx, fy, fz
+                if len(parts) >= 5:
+                    try:
+                        # Gaussian is a bit weird with their Cartesian coordinates construction: 
+                        # first atom is placed at origin; 
+                        # second atom is placed on z-axis (my code places it on x-axis) with flipped sign
+                        # third atom is placed in xz-plane (my code places it in xy-plane) and the sign is also flipped
+                        # To account for this, we read fx' = fz, fy' = -fx, fz' = -fy
+                        fx = float(parts[4])
+                        fy = float(parts[2]) * -1
+                        fz = float(parts[3]) * -1
+
+                        data.append([fx, fy, fz])
+                        started = True
+                    except ValueError:
+                        # ignore non-data lines
+                        continue
+
+            if data:
+                forces_cart = [[c * Ha / Bohr for c in row] for row in data]
+            else:
+                forces_cart = []
+
+        else:
+            forces_cart = []
+
+        forces_cart = np.array(forces_cart).flatten()
+
+        # 4) Final SCF energy & termination flag
+        energy = None
+        normal_term = False
+        for L in reversed(lines):
+            if L.strip().startswith("Normal termination"):
+                normal_term = True
+                        # I think E2 only appears in MP2 calculations and lives on the same line as EUMP2 (which is what we want)
+            if L.strip().startswith("E2"):
+                parts = L.split()
+                try:
+                    energy = float(parts[5].replace("D", "E").replace("d", "E")) * Ha
+                except Exception:
+                    pass
+                if energy is not None:
+                    break
+            elif L.strip().startswith("SCF Done:"):
+                parts = L.split()
+                try:
+                    energy = float(parts[4]) * Ha
+                except Exception:
+                    pass
+                if energy is not None:
+                    break
+
+        if len(zmat) == 0:
+            print("Z-Matrix detection unsuccessful.")
+            print("Was this calculation restarted from a checkpoint file? If yes, please consider using parse_gaussian_fchk(filename, zmat_conn).")
+            print("(Hint: zmat_conn can be obtained using parse_gaussian_input(com_file).)")
+
+        if check_calc:
+            return zmat, zmat_conn, forces_cart, energy, normal_term
+        else:
+            return zmat, zmat_conn, forces_cart, energy
 
 
     
@@ -1274,7 +1501,20 @@ class ParseUtils:
 
         # energy & forces from the usual places
         energy_eV = ParseUtils._parse_energy(lines)
-        forces_eV_per_A = ParseUtils._parse_forces(lines)
+        # forces (may not exist for some methods, e.g. xTB OPT)
+        try:
+            forces_eV_per_A = ParseUtils._parse_forces(lines)
+
+            if forces_eV_per_A is None or len(forces_eV_per_A) == 0:
+                raise ValueError("No gradients found")
+
+        except Exception:
+            warnings.warn(
+                f"No gradients found in ORCA output: {orcarpt_path}. "
+                "Returning forces = None.",
+                RuntimeWarning
+            )
+            forces_eV_per_A = None
 
         return zmat, zmat_conn, constraints, energy_eV, forces_eV_per_A
 

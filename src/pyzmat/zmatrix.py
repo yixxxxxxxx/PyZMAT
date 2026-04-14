@@ -60,7 +60,7 @@ class ZMatrix:
     ## Class methods for loading from various file types #########################################################################################################
 
     @classmethod
-    def load_from_gaussian(cls, filename: str) -> "ZMatrix":
+    def load_from_gaussian_input(cls, filename: str) -> "ZMatrix":
         zmat, zmat_conn, constraints = ParseUtils.parse_gaussian_input(filename)
         obj = cls(zmat = zmat, zmat_conn = zmat_conn, constraints = constraints, name = filename)
         return obj
@@ -68,15 +68,29 @@ class ZMatrix:
     @classmethod
     def load_from_orca_output(cls, filename: str) -> "ZMatrix":
         zmat, zmat_conn, constraints, energy, forces_cart = ParseUtils.parse_orca_output(filename)
-        B = ZmatUtils.get_B_matrix(zmat, zmat_conn)
-        forces = (B @ forces_cart.flatten()).flatten()
-        obj = cls(zmat = zmat, zmat_conn = zmat_conn, constraints = constraints, energy = energy, forces = forces, forces_cart = forces_cart, name = filename)
+        if forces_cart is not None:
+            forces_cart = np.asarray(forces_cart).reshape(-1, 1)
+            B = ZmatUtils.get_B_matrix(zmat, zmat_conn)
+            forces = (B @ forces_cart).flatten()
+            obj = cls(zmat = zmat, zmat_conn = zmat_conn, constraints = constraints, energy = energy, forces = forces, forces_cart = forces_cart, name = filename)
+        else:
+            obj = cls(zmat = zmat, zmat_conn = zmat_conn, constraints = constraints, energy = energy, name = filename)
         return obj
 
     @classmethod
     def load_from_orca_input(cls, filename: str) -> "ZMatrix":
         zmat, zmat_conn, constraints = ParseUtils.parse_orca_input(filename)
         obj = cls(zmat = zmat, zmat_conn = zmat_conn, constraints = constraints, name = filename)
+        return obj
+
+    @classmethod
+    def load_from_gaussian_log(cls, filename: str) -> "ZMatrix":
+        zmat, zmat_conn, forces_cart, energy = ParseUtils.parse_gaussian_log_cart(filename)
+        if forces_cart is not None:
+            forces_cart = np.asarray(forces_cart).reshape(-1, 1)
+            B = ZmatUtils.get_B_matrix(zmat, zmat_conn)
+            forces = (B @ forces_cart).flatten()
+        obj = cls(zmat = zmat, zmat_conn = zmat_conn, energy = energy, forces = forces, name = filename, forces_cart = forces_cart)
         return obj
         
     @classmethod
@@ -291,9 +305,9 @@ class ZMatrix:
             dihedrals.append(dihedral)
         kwargs = {}
         if bonds:
-            kwargs["bond"] = bonds
+            kwargs["bonds"] = bonds
         if angles:
-            kwargs["angle"] = angles
+            kwargs["angles_deg"] = angles
         if dihedrals:
             kwargs["dihedrals_deg"] = dihedrals
         c = FixInternals(**kwargs)
@@ -956,6 +970,46 @@ class ZMatrix:
         except IOError as e:
             print(f"Error writing to {filename}: {e}")
 
+
+
+    def save_orca_premin_input(
+        self,
+        filename,
+        *,
+        maxcore_mb: int = 1000,
+        nproc: int = 1,
+        use_symmetry: bool = False,
+        geom_maxiter: int = 250,
+        geom_conv: str = "LOOSE",
+        charge: int = 0,
+        multiplicity: int = 1,
+        title_lines: Optional[List[str]] = None,
+    ):
+        '''
+        Saves the current Z-matrix as an ORCA input file for XTB2 pre-minimisation.
+        Bond lengths are automatically constrained, along with any existing user
+        constraints stored in self.constraints.
+        '''
+        orca_input = PrintUtils.print_orca_premin_input(
+            self.zmat,
+            self.zmat_conn,
+            self.constraints,
+            maxcore_mb=maxcore_mb,
+            nproc=nproc,
+            use_symmetry=use_symmetry,
+            geom_maxiter=geom_maxiter,
+            geom_conv=geom_conv,
+            charge=charge,
+            multiplicity=multiplicity,
+            title_lines=title_lines,
+        )
+
+        try:
+            with open(filename, 'w', encoding='utf-8') as f:
+                f.write(orca_input)
+        except IOError as e:
+            print(f"Error writing to {filename}: {e}")
+
     ## Functions for generating conformations for finetuning #######################################################
                 
     @staticmethod
@@ -1161,4 +1215,7 @@ class ZMatrix:
         self.zmat = zmat_backup
         self.constraints = constraints_backup
         self.apply_constraints_to_zmat
+
+
+    #def choose_fps_points()
         

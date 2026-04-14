@@ -246,20 +246,20 @@ class PrintUtils:
 			if basis_set.startswith('def2'):
 				if 'RI-MP2' in level_of_theory.upper():
 					ri_aux = basis_set + "/C"
-					route_line: str = "! " + level_of_theory + " " + basis_set + " " + ri_aux +" RIJCOSX def2/J OPT D3BJ DEFGRID3 ENGRAD"
+					route_line: str = "! " + level_of_theory + " " + basis_set + " " + ri_aux +" RIJCOSX def2/J OPT D3BJ DEFGRID2 TightSCF ENGRAD"
 				else:	
-					route_line: str = "! " + level_of_theory + " " + basis_set + " def2/J RIJCOSX D3BJ DEFGRID3 ENGRAD"				
+					route_line: str = "! " + level_of_theory + " " + basis_set + " def2/J RIJCOSX D3BJ DEFGRID2 TightSCF ENGRAD"				
 			else:
-				route_line: str = "! " + level_of_theory + " " + basis_set + " AutoAux RIJCOSX D3BJ DEFGRID3 ENGRAD"
+				route_line: str = "! " + level_of_theory + " " + basis_set + " AutoAux RIJCOSX D3BJ DEFGRID2 TightSCF ENGRAD"
 		else:
 			if basis_set.startswith('def2'):
 				if 'RI-MP2' in level_of_theory.upper():
 					ri_aux = basis_set + "/C"
-					route_line: str = "! " + level_of_theory + " " + basis_set + " " + ri_aux +" RIJCOSX def2/J OPT D3BJ DEFGRID3"
+					route_line: str = "! " + level_of_theory + " " + basis_set + " " + ri_aux +" RIJCOSX def2/J OPT D3BJ TightSCF DEFGRID2"
 				else:
-					route_line: str = "! " + level_of_theory + " " + basis_set + " def2/J RIJCOSX OPT D3BJ DEFGRID3"
+					route_line: str = "! " + level_of_theory + " " + basis_set + " def2/J RIJCOSX OPT D3BJ TightSCF DEFGRID2"
 			else:
-				route_line: str = "! " + level_of_theory + " " + basis_set + " AutoAux RIJCOSX D3BJ DEFGRID3 ENGRAD"
+				route_line: str = "! " + level_of_theory + " " + basis_set + " AutoAux RIJCOSX OPT D3BJ DEFGRID2 TightSCF"
 		# ---------- Build header ----------
 		lines: List[str] = []
 		lines.append("# Calculation type")
@@ -561,6 +561,196 @@ class PrintUtils:
 				)
 
 		lines.append("*")  # end of gzmt block
+		lines.append("")
+
+		return "\n".join(lines)
+	
+	@staticmethod
+	def print_orca_premin_input(
+		zmat: List[List[object]],
+		zmat_conn: List[Tuple[object, Optional[int], Optional[int], Optional[int]]],
+		constraints=None,
+		*,
+		maxcore_mb: int = 1000,
+		nproc: int = 1,
+		use_symmetry: bool = False,
+		geom_maxiter: int = 250,
+		geom_conv: str = "LOOSE",
+		charge: int = 0,
+		multiplicity: int = 1,
+		title_lines: Optional[List[str]] = None,
+	) -> str:
+		"""
+		Build an ORCA XTB pre-minimisation input file (as a string) from zmat,
+		zmat_conn, and constraints.
+
+		Compared with print_orca_extopt_input(), this uses an XTB2 Opt preamble
+		and automatically constrains every bond length present in the Z-matrix,
+		in addition to any user-supplied constraints.
+
+		Parameters
+		----------
+		zmat
+			[[symbol, bond, angle, dihedral], ...]; numeric entries can be None.
+		zmat_conn
+			[(symbol, b_ref, a_ref, d_ref), ...] with 0-based integer refs or None.
+		constraints
+			Object with .bonds, .angles, .dihedrals attributes, each containing
+			tuples like (row_idx, target). Targets are ignored here because all
+			constraints are printed as frozen ("C").
+		charge
+			Molecular charge.
+		multiplicity
+			Spin multiplicity.
+		title_lines
+			Optional list of comment/title lines.
+
+		Returns
+		-------
+		str
+			Complete ORCA input file content.
+		"""
+
+		def fnum(x: Optional[float]) -> str:
+			return f"{x:.6f}"
+
+		# If no constraints are provided, use an object with empty lists.
+		if constraints is None:
+			class DummyConstraints:
+				def __init__(self):
+					self.bonds = []
+					self.angles = []
+					self.dihedrals = []
+			constraints = DummyConstraints()
+
+		# ---------- Build header ----------
+		lines: List[str] = []
+		lines.append("! XTB2 Opt")
+		lines.append("")
+		lines.append(f"%MaxCore {maxcore_mb}")
+		lines.append("")
+		lines.append("%PAL")
+		lines.append(f"   NPROC {nproc}")
+		lines.append("END")
+		lines.append("")
+		lines.append("%SYMMETRY")
+		lines.append(f"   USESYMMETRY {'TRUE' if use_symmetry else 'FALSE'}")
+		lines.append("END")
+		lines.append("")
+		lines.append("%GEOM")
+		lines.append(f"   MAXITER     {geom_maxiter}")
+		lines.append(f"   CONVERGENCE {geom_conv}")
+
+		# ---------- Constraints ----------
+		def add_constraint_block() -> List[str]:
+			c_lines: List[str] = []
+
+			# First: constrain every bond length defined by the z-matrix.
+			# Avoid duplicates if the user also explicitly constrained some bonds.
+			seen = set()
+
+			for row, conn in enumerate(zmat_conn):
+				_, jb, _, _ = conn
+				if jb is None:
+					continue
+				key = ("B", row, jb)
+				if key not in seen:
+					c_lines.append(f"   {{ B {row} {jb} C }}")
+					seen.add(key)
+
+			# Then add user-supplied bond constraints
+			for (row, _target) in constraints.bonds:
+				if not (0 <= row < len(zmat_conn)):
+					continue
+				_, jb, _, _ = zmat_conn[row]
+				if jb is None:
+					continue
+				key = ("B", row, jb)
+				if key not in seen:
+					c_lines.append(f"   {{ B {row} {jb} C }}")
+					seen.add(key)
+
+			# User-supplied angle constraints
+			for (row, _target) in constraints.angles:
+				if not (0 <= row < len(zmat_conn)):
+					continue
+				_, jb, ka, _ = zmat_conn[row]
+				if jb is None or ka is None:
+					continue
+				key = ("A", row, jb, ka)
+				if key not in seen:
+					c_lines.append(f"   {{ A {row} {jb} {ka} C }}")
+					seen.add(key)
+
+			# User-supplied dihedral constraints
+			for (row, _target) in constraints.dihedrals:
+				if not (0 <= row < len(zmat_conn)):
+					continue
+				_, jb, ka, ld = zmat_conn[row]
+				if jb is None or ka is None or ld is None:
+					continue
+				key = ("D", row, jb, ka, ld)
+				if key not in seen:
+					c_lines.append(f"   {{ D {row} {jb} {ka} {ld} C }}")
+					seen.add(key)
+
+			return c_lines
+
+		cons_lines = add_constraint_block()
+		if cons_lines:
+			lines.append("   CONSTRAINTS")
+			lines.extend(cons_lines)
+			lines.append("   END")
+
+		lines.append("END")
+		lines.append("")
+
+		# ---------- Title (optional) ----------
+		if title_lines:
+			for t in title_lines:
+				lines.append(f"# {t}")
+			lines.append("")
+
+		# ---------- gzmt block ----------
+		lines.append("* gzmt {} {}".format(charge, multiplicity))
+
+		for i, (row, conn) in enumerate(zip(zmat, zmat_conn)):
+			sym = str(row[0])
+			if not sym or sym == "None":
+				sym = str(conn[0])
+
+			b_val = row[1] if len(row) > 1 else None
+			a_val = row[2] if len(row) > 2 else None
+			d_val = row[3] if len(row) > 3 else None
+
+			_, jb, ka, ld = conn
+
+			if i == 0:
+				lines.append(f"{sym:<2}")
+			elif i == 1:
+				if jb is None or b_val is None:
+					raise ValueError(f"Row {i}: missing bond reference/value.")
+				lines.append(f"{sym:<2} {jb+1:>8d} {fnum(b_val):>14}")
+			elif i == 2:
+				if jb is None or b_val is None or ka is None or a_val is None:
+					raise ValueError(f"Row {i}: missing angle info.")
+				lines.append(
+					f"{sym:<2} {jb+1:>8d} {fnum(b_val):>14} {ka+1:>8d} {fnum(a_val):>14}"
+				)
+			else:
+				if (
+					jb is None or b_val is None
+					or ka is None or a_val is None
+					or ld is None or d_val is None
+				):
+					raise ValueError(f"Row {i}: missing dihedral info.")
+				lines.append(
+					f"{sym:<2} {jb+1:>8d} {fnum(b_val):>14} "
+					f"{ka+1:>8d} {fnum(a_val):>14} "
+					f"{ld+1:>8d} {fnum(d_val):>14}"
+				)
+
+		lines.append("*")
 		lines.append("")
 
 		return "\n".join(lines)
