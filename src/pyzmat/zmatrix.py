@@ -1,8 +1,6 @@
 from ase import Atoms
-from ase.io import read, write
-from ase.geometry import *
-from ase.constraints import *
-from ase.units import *
+from ase.constraints import FixInternals
+from ase.units import Bohr, Ha
 
 
 #from ase.optimize.bfgslinesearch import BFGSLineSearch
