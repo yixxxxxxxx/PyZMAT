@@ -1,12 +1,50 @@
 import numpy as np
 from ase import Atoms
 import copy
+from functools import wraps
 
 
 from ase.neighborlist import natural_cutoffs, neighbor_list
 
-    
-from numba import njit
+_NUMBA_REGISTRY = []
+_NUMBA_BOOTSTRAPPED = False
+
+
+def njit(*jit_args, **jit_kwargs):
+    """
+    Lazy stand-in for numba.njit.
+
+    Import and compile Numba kernels only when one of the decorated functions
+    is first called, keeping module import light.
+    """
+    def decorator(func):
+        _NUMBA_REGISTRY.append((func, jit_args, jit_kwargs))
+
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            _bootstrap_numba_dispatchers()
+            return globals()[func.__name__](*args, **kwargs)
+
+        return wrapper
+
+    return decorator
+
+
+def _bootstrap_numba_dispatchers():
+    global _NUMBA_BOOTSTRAPPED
+    if _NUMBA_BOOTSTRAPPED:
+        return
+
+    try:
+        from numba import njit as _numba_njit
+    except Exception:
+        for func, _, _ in _NUMBA_REGISTRY:
+            globals()[func.__name__] = func
+    else:
+        for func, jit_args, jit_kwargs in _NUMBA_REGISTRY:
+            globals()[func.__name__] = _numba_njit(*jit_args, **jit_kwargs)(func)
+
+    _NUMBA_BOOTSTRAPPED = True
 
 # -------------------------
 # 3D vector helpers
