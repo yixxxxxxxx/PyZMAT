@@ -221,10 +221,10 @@ class ParseUtils:
             if state == "search" and line.startswith("0 "):
                 state = "zmat"
                 continue
-            if state == "zmat" and low.startswith("variables:"):
+            if state == "zmat" and low.startswith("variables"):
                 state = "vars"
                 continue
-            if state == "vars" and low.startswith("constants:"):
+            if state == "vars" and low.startswith("constants"):
                 state = "consts"
                 continue
 
