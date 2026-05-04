@@ -181,6 +181,63 @@ class PrintUtils:
 						print(entry, end=" ")
 				print()
 
+	@staticmethod
+	def print_gaussian_log(zmat, zmat_conn, constraints, energy, forces):
+		"""
+		Print a Gaussian-like "Optimized Parameters" block using current Z-matrix values
+		and internal-coordinate forces (-DE/DX). Constrained DOFs are printed last.
+		"""
+		# Keep signature-compatible arg that is not needed in this block.
+		_ = zmat_conn
+
+		# default empty constraints
+		if constraints is None:
+			class _C:
+				bonds = []
+				angles = []
+				dihedrals = []
+			constraints = _C()
+
+		# Build complete DOF list in canonical zmat order.
+		all_dofs = []
+		for i in range(1, len(zmat)):
+			if zmat[i][1] is not None:
+				all_dofs.append((f"bnd{i+1}", float(zmat[i][1])))
+			if i >= 2 and zmat[i][2] is not None:
+				all_dofs.append((f"ang{i+1}", float(zmat[i][2])))
+			if i >= 3 and zmat[i][3] is not None:
+				dih = float(zmat[i][3])
+				if dih > 180.0:
+					dih -= 360.0
+				all_dofs.append((f"dih{i+1}", dih))
+
+		forces = np.asarray(forces, dtype=float).reshape(-1)
+		if len(forces) != len(all_dofs):
+			raise ValueError(
+				f"forces length ({len(forces)}) must match DOF count ({len(all_dofs)})"
+			)
+
+		const_names = [f"bnd{idx+1}" for idx, _ in constraints.bonds] + \
+					  [f"ang{idx+1}" for idx, _ in constraints.angles] + \
+					  [f"dih{idx+1}" for idx, _ in constraints.dihedrals]
+		const_set = set(const_names)
+
+		ordered = [(nm, val, frc) for (nm, val), frc in zip(all_dofs, forces) if nm not in const_set]
+		ordered += [(nm, val, frc) for (nm, val), frc in zip(all_dofs, forces) if nm in const_set]
+
+		print(f"SCF Done:  E(MLIP) =  {float(energy): .9f}     a.u.")
+		print("                       ----------------------------")
+		print("                       !   Optimized Parameters   !")
+		print("                       ! (Angstroms and Degrees)  !")
+		print(" ----------------------                            ----------------------")
+		print(" !      Name          Value   Derivative information (Atomic Units)     !")
+		print(" ------------------------------------------------------------------------")
+
+		for nm, val, frc in ordered:
+			print(f" !      {nm:<5}   {val:10.4f}   -DE/DX =   {frc: .4f}                        !")
+
+		print(" ------------------------------------------------------------------------")
+
 
 
 	@staticmethod
