@@ -1,4 +1,5 @@
 from ase import Atoms
+from ase.units import Ha
 from .constraints import Constraints
 import numpy as np
 import io
@@ -212,6 +213,7 @@ class PrintUtils:
 				all_dofs.append((f"dih{i+1}", dih))
 
 		forces = np.asarray(forces, dtype=float).reshape(-1)
+		forces_ha = forces / Ha
 		if len(forces) != len(all_dofs):
 			raise ValueError(
 				f"forces length ({len(forces)}) must match DOF count ({len(all_dofs)})"
@@ -222,10 +224,13 @@ class PrintUtils:
 					  [f"dih{idx+1}" for idx, _ in constraints.dihedrals]
 		const_set = set(const_names)
 
-		ordered = [(nm, val, frc) for (nm, val), frc in zip(all_dofs, forces) if nm not in const_set]
-		ordered += [(nm, val, frc) for (nm, val), frc in zip(all_dofs, forces) if nm in const_set]
+		ordered = [(nm, val, frc) for (nm, val), frc in zip(all_dofs, forces_ha) if nm not in const_set]
+		ordered += [(nm, val, frc) for (nm, val), frc in zip(all_dofs, forces_ha) if nm in const_set]
 
-		print(f"SCF Done:  E(MLIP) =  {float(energy): .9f}     a.u.")
+
+		energy_ha = energy / Ha
+		
+		print(f"SCF Done:  E(MLIP) =  {float(energy_ha): .9f}     a.u.")
 		print("                       ----------------------------")
 		print("                       !   Optimized Parameters   !")
 		print("                       ! (Angstroms and Degrees)  !")
@@ -237,6 +242,8 @@ class PrintUtils:
 			print(f" !      {nm:<5}   {val:10.4f}   -DE/DX =   {frc: .4f}                        !")
 
 		print(" ------------------------------------------------------------------------")
+
+		print("Normal termination of MLIP.")
 
 
 
