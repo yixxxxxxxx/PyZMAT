@@ -187,8 +187,8 @@ class PrintUtils:
 		Print a Gaussian-like "Optimized Parameters" block using current Z-matrix values
 		and internal-coordinate forces (-DE/DX). Constrained DOFs are printed last.
 		"""
-		# Keep signature-compatible args that are not needed in this block.
-		_ = zmat_conn, energy
+		# Keep signature-compatible arg that is not needed in this block.
+		_ = zmat_conn
 
 		# default empty constraints
 		if constraints is None:
@@ -225,6 +225,7 @@ class PrintUtils:
 		ordered = [(nm, val, frc) for (nm, val), frc in zip(all_dofs, forces) if nm not in const_set]
 		ordered += [(nm, val, frc) for (nm, val), frc in zip(all_dofs, forces) if nm in const_set]
 
+		print(f"SCF Done:  E(MLIP) =  {float(energy): .9f}     a.u.")
 		print("                       ----------------------------")
 		print("                       !   Optimized Parameters   !")
 		print("                       ! (Angstroms and Degrees)  !")
