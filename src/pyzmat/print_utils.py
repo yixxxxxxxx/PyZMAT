@@ -245,6 +245,75 @@ class PrintUtils:
 
 		print("Normal termination of MLIP.")
 
+	@staticmethod
+	def print_gaussian_fchk(zmat, zmat_conn, constraints, forces, hessian):
+		"""
+		Print Gaussian-like fchk blocks for internal forces and internal force constants.
+		- Constrained DOFs are moved to the end in both row/column ordering.
+		- Forces are printed as a flat vector.
+		- Force constants are printed as lower-triangular packed elements:
+		  [H(1,1), H(2,1), H(2,2), H(3,1), ...].
+		- Input `forces` and `hessian` are assumed to be in eV-based units and are
+		  converted to Ha-based units by dividing by `Ha`.
+		"""
+		_ = zmat_conn
+
+		# default empty constraints
+		if constraints is None:
+			class _C:
+				bonds = []
+				angles = []
+				dihedrals = []
+			constraints = _C()
+
+		# Build canonical DOF names in zmat order.
+		all_names = []
+		for i in range(1, len(zmat)):
+			if zmat[i][1] is not None:
+				all_names.append(f"bnd{i+1}")
+			if i >= 2 and zmat[i][2] is not None:
+				all_names.append(f"ang{i+1}")
+			if i >= 3 and zmat[i][3] is not None:
+				all_names.append(f"dih{i+1}")
+
+		forces = np.asarray(forces, dtype=float).reshape(-1)
+		H = np.asarray(hessian, dtype=float)
+		m = len(all_names)
+		if len(forces) != m:
+			raise ValueError(f"forces length ({len(forces)}) must match DOF count ({m})")
+		if H.shape != (m, m):
+			raise ValueError(f"hessian shape {H.shape} must be ({m}, {m})")
+
+		# Constrained DOFs should appear at the end.
+		const_names = [f"bnd{idx+1}" for idx, _ in constraints.bonds] + \
+					  [f"ang{idx+1}" for idx, _ in constraints.angles] + \
+					  [f"dih{idx+1}" for idx, _ in constraints.dihedrals]
+		const_set = set(const_names)
+		ordered_names = [nm for nm in all_names if nm not in const_set] + \
+						[nm for nm in all_names if nm in const_set]
+		order = [all_names.index(nm) for nm in ordered_names]
+
+		# Reorder and convert eV -> Ha.
+		forces_ha = (forces[order] / Ha).tolist()
+		H_ha = H[np.ix_(order, order)] / Ha
+
+		# Pack lower triangular row-wise (i from 0..m-1, j from 0..i).
+		H_pack = []
+		for i in range(m):
+			for j in range(i + 1):
+				H_pack.append(H_ha[i, j])
+
+		# Print helper: 5 values per line.
+		def _print_vals(vals):
+			for i in range(0, len(vals), 5):
+				chunk = vals[i:i+5]
+				print(" " + " ".join(f"{v: .8E}" for v in chunk))
+
+		print(f"Internal Forces                            R   N= {m:11d}")
+		_print_vals(forces_ha)
+		print(f"Internal Force Constants                   R   N= {len(H_pack):11d}")
+		_print_vals(H_pack)
+
 
 
 	@staticmethod
