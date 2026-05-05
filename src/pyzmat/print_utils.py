@@ -2,7 +2,6 @@ from ase import Atoms
 from ase.units import Ha
 from .constraints import Constraints
 import numpy as np
-import io
 from typing import List, Tuple, Optional, Dict
 
 class PrintUtils:
@@ -12,8 +11,7 @@ class PrintUtils:
 		if '\n' in comment:
 			raise ValueError('Comment line should not have line breaks.')
 		natoms = len(atoms)
-		print(f'{natoms}')
-		print(comment)
+		lines = [f'{natoms}', comment]
 		counter_dict = {}
 		for s, (x, y, z) in zip(atoms.symbols, atoms.positions):
 			if s not in counter_dict:
@@ -21,7 +19,8 @@ class PrintUtils:
 			else:
 				counter_dict[s] += 1
 			s_counted = s + str(counter_dict[s])
-			print('%-2s %s %s %s' % (s_counted, fmt % x, fmt % y, fmt % z))
+			lines.append('%-2s %s %s %s' % (s_counted, fmt % x, fmt % y, fmt % z))
+		return "\n".join(lines)
 
 	@staticmethod
 	def print_zmat(zmat, zmat_conn, constraints = None):
@@ -36,6 +35,7 @@ class PrintUtils:
 			constraints = DummyConstraints()
 			
 		# Here, each zmat_conn entry is a 4-tuple: (symbol, bond_ref, angle_ref, dihedral_ref)
+		lines = []
 		for i, (zmat_row, conn_row) in enumerate(zip(zmat, zmat_conn)):
 			symbol = zmat_row[0]
 			# Extract connectivity indices from the new tuple: skip the first element (symbol)
@@ -43,46 +43,48 @@ class PrintUtils:
 			c2 = conn_row[2] + 1 if conn_row[2] is not None else ''
 			c3 = conn_row[3] + 1 if conn_row[3] is not None else ''
 			if i == 0:
-				print(f"{symbol}")
+				lines.append(f"{symbol}")
 			elif i == 1:
-				print(f"{symbol}	{c1}	bnd{i + 1}")
+				lines.append(f"{symbol}	{c1}	bnd{i + 1}")
 			elif i == 2:
-				print(f"{symbol}	{c1}	bnd{i + 1}	{c2}	ang{i + 1}")
+				lines.append(f"{symbol}	{c1}	bnd{i + 1}	{c2}	ang{i + 1}")
 			else:
-				print(f"{symbol}	{c1}	bnd{i + 1}	{c2}	ang{i + 1}	{c3}	dih{i + 1}")
-		print("Variables:")
+				lines.append(f"{symbol}	{c1}	bnd{i + 1}	{c2}	ang{i + 1}	{c3}	dih{i + 1}")
+		lines.append("Variables:")
 		# For each atom (from index 1 onward), print the DOFs that are not constrained.
 		for i in range(1, len(zmat)):
 			atom = zmat[i]
 			if not any(idx == i for idx, _ in constraints.bonds):
 				if atom[1] is not None:
-					print(f"bnd{i+1}	 {atom[1]:.6f}")
+					lines.append(f"bnd{i+1}	 {atom[1]:.6f}")
 			if i >= 2 and not any(idx == i for idx, _ in constraints.angles):
 				if atom[2] is not None:
-					print(f"ang{i+1}	 {atom[2]:.6f}")
+					lines.append(f"ang{i+1}	 {atom[2]:.6f}")
 			if i >= 3 and not any(idx == i for idx, _ in constraints.dihedrals):
 				if atom[3] is not None:
 					dih = atom[3]
 					if dih > 180:
 						dih = dih - 360
-					print(f"dih{i+1}	 {dih:.6f}")
+					lines.append(f"dih{i+1}	 {dih:.6f}")
 		if constraints.bonds or constraints.angles or constraints.dihedrals:
-			print("Constants:")
+			lines.append("Constants:")
 			for idx, val in constraints.bonds:
 				cur_val = val if val is not None else zmat[idx][1]
-				print(f"bnd{idx+1}	 {cur_val:.6f}")
+				lines.append(f"bnd{idx+1}	 {cur_val:.6f}")
 			for idx, val in constraints.angles:
 				cur_val = val if val is not None else zmat[idx][2]
-				print(f"ang{idx+1}	 {cur_val:.6f}")
+				lines.append(f"ang{idx+1}	 {cur_val:.6f}")
 			for idx, val in constraints.dihedrals:
 				cur_val = val if val is not None else zmat[idx][3]
 				if cur_val > 180:
 					cur_val = cur_val - 360
-				print(f"dih{idx+1}	 {cur_val:.6f}")
+				lines.append(f"dih{idx+1}	 {cur_val:.6f}")
+		return "\n".join(lines)
 
 	@staticmethod
 	def print_forces(forces, zmat, fmt='%22.15f'):
 		blank = ' ' * 22
+		lines = []
 		counter_dict = {}
 		for i, row in enumerate(zmat):
 			s = row[0]
@@ -93,16 +95,17 @@ class PrintUtils:
 			s_counted = s + str(counter_dict[s])
 			
 			if i == 0:
-				print('%-2s %s %s %s' % (s_counted, blank, blank, blank))
+				lines.append('%-2s %s %s %s' % (s_counted, blank, blank, blank))
 			elif i == 1:
-				print('%-2s %s %s %s' % (s_counted, fmt % forces[0], blank, blank))
+				lines.append('%-2s %s %s %s' % (s_counted, fmt % forces[0], blank, blank))
 			elif i == 2:
-				print('%-2s %s %s %s' % (s_counted, fmt % forces[1], fmt % forces[2], blank))
+				lines.append('%-2s %s %s %s' % (s_counted, fmt % forces[1], fmt % forces[2], blank))
 			else:
 				force_bond = forces[3 * i - 6]
 				force_angle = forces[3 * i - 5]
 				force_torsion = forces[3 * i - 4]
-				print('%-2s %s %s %s' % (s_counted, fmt % force_bond, fmt % force_angle, fmt % force_torsion))
+				lines.append('%-2s %s %s %s' % (s_counted, fmt % force_bond, fmt % force_angle, fmt % force_torsion))
+		return "\n".join(lines)
 
 	@staticmethod
 	def print_hessian(hessian, zmat, constraints=None, block_size=5):
@@ -159,19 +162,20 @@ class PrintUtils:
 		fw = digit_width + 1		   # reserve 1 char for sign or leading space -> 15
 	
 		# 6) print in blocks of columns
+		lines = []
 		for block_start in range(0, m, block_size):
 			block_end = min(block_start + block_size, m)
 	
 			# header row
-			print(" " * (fw - 6 + 1), end=" ")
+			header = [" " * (fw - 6 + 1)]
 			for j in range(block_start, block_end):
-				print(f"{new_order[j]:{fw}s}", end=" ")
-			print()
+				header.append(f"{new_order[j]:{fw}s}")
+			lines.append(" ".join(header))
 	
 			# data rows
 			for i in range(block_start, m):
 				# row label
-				print(f"{new_order[i]:{fw - 9}s}", end=" ")
+				row = [f"{new_order[i]:{fw - 9}s}"]
 				for j in range(block_start, block_end):
 					if j <= i:
 						val = H2[i, j]
@@ -179,8 +183,9 @@ class PrintUtils:
 						sig = "-" if val < 0 else " "
 						body = f"{abs(val):.8E}"	   # always starts with a digit
 						entry = (sig + body).ljust(fw)  # pad on right
-						print(entry, end=" ")
-				print()
+						row.append(entry)
+				lines.append(" ".join(row))
+		return "\n".join(lines)
 
 	@staticmethod
 	def print_gaussian_log(zmat, zmat_conn, constraints, energy, forces):
@@ -230,20 +235,22 @@ class PrintUtils:
 
 		energy_ha = energy / Ha
 		
-		print(f"SCF Done:  E(MLIP) =  {float(energy_ha): .9f}     a.u.")
-		print("                       ----------------------------")
-		print("                       !   Optimized Parameters   !")
-		print("                       ! (Angstroms and Degrees)  !")
-		print(" ----------------------                            ----------------------")
-		print(" !      Name          Value   Derivative information (Atomic Units)     !")
-		print(" ------------------------------------------------------------------------")
+		lines = []
+		lines.append(f"SCF Done:  E(MLIP) =  {float(energy_ha): .9f}     a.u.")
+		lines.append("                       ----------------------------")
+		lines.append("                       !   Optimized Parameters   !")
+		lines.append("                       ! (Angstroms and Degrees)  !")
+		lines.append(" ----------------------                            ----------------------")
+		lines.append(" !      Name          Value   Derivative information (Atomic Units)     !")
+		lines.append(" ------------------------------------------------------------------------")
 
 		for nm, val, frc in ordered:
-			print(f" !      {nm:<5}   {val:10.4f}   -DE/DX =   {frc: .4f}                        !")
+			lines.append(f" !      {nm:<5}   {val:10.4f}   -DE/DX =   {frc: .4f}                        !")
 
-		print(" ------------------------------------------------------------------------")
+		lines.append(" ------------------------------------------------------------------------")
 
-		print("Normal termination of MLIP.")
+		lines.append("Normal termination of MLIP.")
+		return "\n".join(lines)
 
 	@staticmethod
 	def print_gaussian_fchk(zmat, zmat_conn, constraints, forces, hessian):
@@ -304,15 +311,17 @@ class PrintUtils:
 				H_pack.append(H_ha[i, j])
 
 		# Print helper: 5 values per line.
+		lines = []
 		def _print_vals(vals):
 			for i in range(0, len(vals), 5):
 				chunk = vals[i:i+5]
-				print(" " + " ".join(f"{v: .8E}" for v in chunk))
+				lines.append(" " + " ".join(f"{v: .8E}" for v in chunk))
 
-		print(f"Internal Forces                            R   N= {m:11d}")
+		lines.append(f"Internal Forces                            R   N= {m:11d}")
 		_print_vals(forces_ha)
-		print(f"Internal Force Constants                   R   N= {len(H_pack):11d}")
+		lines.append(f"Internal Force Constants                   R   N= {len(H_pack):11d}")
 		_print_vals(H_pack)
+		return "\n".join(lines)
 
 
 
