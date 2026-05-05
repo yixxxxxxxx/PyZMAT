@@ -22,8 +22,6 @@ import json
 
 from typing import Tuple, Optional
 
-import io
-from contextlib import redirect_stdout
 
 from typing import List, Tuple, Optional, Dict
 
@@ -530,12 +528,12 @@ class ZMatrix:
         print('Model used:', self.calculator, self.model_size)
         print('Input Z-matrix:')
         print('======================================================================================')
-        PrintUtils.print_zmat(self.zmat, self.zmat_conn, self.constraints)
+        print(PrintUtils.print_zmat(self.zmat, self.zmat_conn, self.constraints))
         print('======================================================================================')
         print('Building cartesian molecule from input geometry...')
         atoms = self.get_atoms()
         print('======================================================================================')
-        PrintUtils.print_xyz(atoms, comment='Input coordinates of ' + self.name, fmt='%22.15f')
+        print(PrintUtils.print_xyz(atoms, comment='Input coordinates of ' + self.name, fmt='%22.15f'))
         print('======================================================================================')
         atoms.calc = self.calculator
         del atoms.constraints
@@ -584,23 +582,23 @@ class ZMatrix:
         self.zmat = zmat_minimised
         print('Optimised Z-matrix:')
         print('======================================================================================')
-        PrintUtils.print_zmat(self.zmat, self.zmat_conn, self.constraints)
+        print(PrintUtils.print_zmat(self.zmat, self.zmat_conn, self.constraints))
         print('======================================================================================')
         forces = self.get_forces()
 
         print('Optimised cartesian coordinates:')		
         print('======================================================================================')
-        PrintUtils.print_xyz(atoms_minimised, comment='ASE minimised ' + self.name, fmt='%22.15f')
+        print(PrintUtils.print_xyz(atoms_minimised, comment='ASE minimised ' + self.name, fmt='%22.15f'))
         print('======================================================================================')
         print('Forces in terms of dU/db [Ha/bohr], dU/da [Ha/rad], and dU/dt [Ha/rad]:')
         print('======================================================================================')
-        PrintUtils.print_forces(forces, self.zmat)
+        print(PrintUtils.print_forces(forces, self.zmat))
         print('======================================================================================')
         if calc_hess:
             print('Calculating Hessian matrix as calc_hess is set to True...')
             hessian = self.get_hessian()
             print('Calculated Hessian:')
-            PrintUtils.print_hessian(hessian, self.zmat, constraints = self.constraints, block_size = 5)
+            print(PrintUtils.print_hessian(hessian, self.zmat, constraints = self.constraints, block_size = 5))
             print('======================================================================================')
         print('Routine finished successfully.')
 
@@ -764,12 +762,12 @@ class ZMatrix:
         print('Model used:', self.calculator, self.model_size)
         print('Input Z-matrix:')
         print('======================================================================================')
-        PrintUtils.print_zmat(self.zmat, self.zmat_conn, self.constraints)
+        print(PrintUtils.print_zmat(self.zmat, self.zmat_conn, self.constraints))
         print('======================================================================================')
         print('Building cartesian molecule from input geometry...')
         atoms = self.get_atoms()
         print('======================================================================================')
-        PrintUtils.print_xyz(atoms, comment='Input coordinates of ' + self.name, fmt='%22.15f')
+        print(PrintUtils.print_xyz(atoms, comment='Input coordinates of ' + self.name, fmt='%22.15f'))
         print('======================================================================================')
 
         geometry = self.form_psi4_geom()
@@ -807,23 +805,23 @@ class ZMatrix:
         self.zmat = zmat_minimised
         print('Optimised Z-matrix:')
         print('======================================================================================')
-        PrintUtils.print_zmat(self.zmat, self.zmat_conn, self.constraints)
+        print(PrintUtils.print_zmat(self.zmat, self.zmat_conn, self.constraints))
         print('======================================================================================')
         forces = self.get_forces()
 
         print('Optimised cartesian coordinates:')		
         print('======================================================================================')
-        PrintUtils.print_xyz(atoms_minimised, comment='OptKing minimised ' + self.name, fmt='%22.15f')
+        print(PrintUtils.print_xyz(atoms_minimised, comment='OptKing minimised ' + self.name, fmt='%22.15f'))
         print('======================================================================================')
         print('Forces in terms of dU/db [Ha/bohr], dU/da [Ha/rad], and dU/dt [Ha/rad]:')
         print('======================================================================================')
-        PrintUtils.print_forces(forces, self.zmat)
+        print(PrintUtils.print_forces(forces, self.zmat))
         print('======================================================================================')
         if calc_hess:
             print('Calculating Hessian matrix as calc_hess is set to True...')
             hessian = self.get_hessian()
             print('Calculated Hessian:')
-            PrintUtils.print_hessian(hessian, self.zmat, constraints = self.constraints, block_size = 5)
+            print(PrintUtils.print_hessian(hessian, self.zmat, constraints = self.constraints, block_size = 5))
             print('======================================================================================')
         print('Routine finished successfully.')
 
@@ -875,18 +873,53 @@ class ZMatrix:
             pickle.dump(self, f)
 
 
-    def save_gaussian_com(self, filename, preamble, postamble = None):
-        '''
-        Saves the current geometry as a gaussian .com file. 
-        Preamble should be a docstring containing gaussian settings (%mem, %nprocshared etc) 
-        '''
-        # Capture the printed Z-matrix
-        buf = io.StringIO()
-        with redirect_stdout(buf):
-            PrintUtils.print_zmat(self.zmat, self.zmat_conn, self.constraints)
-        zmat_text = buf.getvalue()
+    def save_gaussian_com(
+        self,
+        filename,
+        *,
+        qm_method: str = "B3LYP/6-31G(d)",
+        int_grid: str = "UltraFine",
+        scf_conv: str = "Tight",
+        iop_6_60: Optional[int] = None,
+        pop: str = "None",
+        use_pcm: bool = False,
+        pcm_epsilon: Optional[float] = None,
+        mem_mb: int = 4000,
+        nproc: int = 8,
+        chk_file: Optional[str] = None,
+        charge: int = 0,
+        multiplicity: int = 1,
+        title: Optional[str] = None,
+    ):
+        """Save the current geometry as a Gaussian .com input file."""
+        if chk_file is None:
+            chk_file = f"{self.name}.chk" if self.name else "pyzmat.chk"
+        title_line = title if title is not None else (self.name or filename)
 
-        # Write preamble + zmat + postamble
+        route_lines = [f"#{qm_method}", f"#int={int_grid} SCF={scf_conv}"]
+        if iop_6_60 is not None:
+            route_lines.append(f"#IOp(6/60={iop_6_60})")
+        route_tail = f"#Pop={pop} NoSymm"
+        if use_pcm:
+            route_tail += "\n#SCRF=(PCM,Read)"
+        route_lines.append(route_tail)
+
+        preamble = (
+            f"%mem={mem_mb}MB\n"
+            f"%nprocshared={nproc}\n"
+            f"%chk={chk_file}\n"
+            + "\n".join(route_lines)
+            + f"\n\n{title_line}\n\n {charge} {multiplicity}\n"
+        )
+        postamble = ""
+        if use_pcm:
+            if pcm_epsilon is None:
+                raise ValueError("pcm_epsilon must be provided when use_pcm=True")
+            postamble = f"\nEPS={pcm_epsilon}\n\n"
+        else:
+            postamble = "\n"
+
+        zmat_text = PrintUtils.print_zmat(self.zmat, self.zmat_conn, self.constraints)
         try:
             with open(filename, 'w', encoding='utf-8') as f:
                 f.write(preamble)
@@ -895,10 +928,7 @@ class ZMatrix:
                 f.write(zmat_text)
                 if not zmat_text.endswith('\n'):
                     f.write('\n')
-                if postamble:
-                    f.write(postamble)
-                if not zmat_text.endswith('\n'):
-                    f.write('\n') 
+                f.write(postamble)
         except IOError as e:
             print(f"Error writing to {filename}: {e}")
 
@@ -1196,15 +1226,15 @@ class ZMatrix:
     
             elif mode.lower() == "gaussian":
                 filename = os.path.join(subdir, f"{name_pattern}_{i}.com")
-                preamble = f"""%mem={maxcore_mb}MB
-    %nprocshared={nproc}
-    #P {level_of_theory} {basis_set} Opt=CalcFC
-    
-    {self.name or 'Sobol conformation'}
-    
-    0 1
-    """
-                self.save_gaussian_com(filename, preamble)
+                self.save_gaussian_com(
+                    filename,
+                    qm_method=f"P {level_of_theory} {basis_set} Opt=CalcFC",
+                    mem_mb=maxcore_mb,
+                    nproc=nproc,
+                    title=self.name or 'Sobol conformation',
+                    charge=0,
+                    multiplicity=1,
+                )
                 conf_idx += 1
             else:
                 raise ValueError("mode must be 'orca' or 'gaussian'")
