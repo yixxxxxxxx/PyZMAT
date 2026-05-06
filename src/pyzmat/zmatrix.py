@@ -932,6 +932,50 @@ class ZMatrix:
         except IOError as e:
             print(f"Error writing to {filename}: {e}")
 
+    def save_gaussian_log(self, filename):
+        """Save Gaussian-like log output for the current internal coordinates."""
+        if self.energy is None:
+            raise ValueError("energy must be set before saving Gaussian log output")
+        if self.forces is None:
+            raise ValueError("forces must be set before saving Gaussian log output")
+
+        log_text = PrintUtils.print_gaussian_log(
+            self.zmat,
+            self.zmat_conn,
+            self.constraints,
+            self.energy,
+            self.forces,
+        )
+        try:
+            with open(filename, 'w', encoding='utf-8') as f:
+                f.write(log_text)
+                if not log_text.endswith('\n'):
+                    f.write('\n')
+        except IOError as e:
+            print(f"Error writing to {filename}: {e}")
+
+    def save_gaussian_fchk(self, filename):
+        """Save Gaussian-like formatted checkpoint data for current forces and Hessian."""
+        if self.forces is None:
+            raise ValueError("forces must be set before saving Gaussian fchk output")
+        if self.hessian is None:
+            raise ValueError("hessian must be set before saving Gaussian fchk output")
+
+        fchk_text = PrintUtils.print_gaussian_fchk(
+            self.zmat,
+            self.zmat_conn,
+            self.constraints,
+            self.forces,
+            self.hessian,
+        )
+        try:
+            with open(filename, 'w', encoding='utf-8') as f:
+                f.write(fchk_text)
+                if not fchk_text.endswith('\n'):
+                    f.write('\n')
+        except IOError as e:
+            print(f"Error writing to {filename}: {e}")
+
     def save_mace_train_xyz(self, filename):
         '''
         Saves the current geometry as an xyz file formatted for MACE training data.
