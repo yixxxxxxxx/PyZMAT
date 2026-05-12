@@ -1051,7 +1051,7 @@ class ZMatrix:
         maxcore_mb: int = 1000,
         nproc: int = 1,
         use_symmetry: bool = False,
-        geom_maxiter: int = 250,
+        geom_maxiter: int = 500,
         geom_conv: str = "LOOSE",
         charge: int = 0,
         multiplicity: int = 1,
