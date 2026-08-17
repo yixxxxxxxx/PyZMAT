@@ -10,6 +10,7 @@ from ase.units import Bohr, Ha
 
 
 import time
+import copy
 
 import numpy as np
 
@@ -407,8 +408,16 @@ class ZMatrix:
             out = calc.eval(data, forces = True, hessian = True)
             H_cart = out['hessian']
 
-        N = H_cart.shape[0]
-        return H_cart.reshape((N, N))
+        H_cart = np.asarray(H_cart)
+        cart_size = 3 * len(self.zmat)
+        expected_size = cart_size * cart_size
+        if H_cart.size != expected_size:
+            raise ValueError(
+                "Calculator returned a Cartesian Hessian with shape "
+                f"{H_cart.shape}; expected {expected_size} elements for "
+                f"{len(self.zmat)} atoms."
+            )
+        return H_cart.reshape((cart_size, cart_size))
 
 
     @staticmethod

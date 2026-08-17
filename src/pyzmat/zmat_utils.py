@@ -135,8 +135,8 @@ def get_curvature_tensor_kernel_numba(xyz, B, conn, bl, ang, dih, valid_frame):
 
         ref = conn[2, 0]
         if ref == 0:
-            K[6, 1, 2] = sin_a
-            K[6, 2, 1] = sin_a
+            K[6, 1, 2] = -sin_a
+            K[6, 2, 1] = -sin_a
             K[6, 2, 2] = -bond_length * cos_a
             K[7, 1, 2] = cos_a
             K[7, 2, 1] = cos_a
@@ -488,7 +488,7 @@ def get_curvature_tensor_kernel_numba(xyz, B, conn, bl, ang, dih, valid_frame):
                                         + bond_length * d_ijkl_t * sin_a * cos_d)
                         + tcrp[0] * (d_ij_s * d_ijk_t * cos_a * sin_d 
                                         + d_ij_s * d_ijkl_t * sin_a * cos_d)
-                        + Dttcrp0 * (d_ij_s * sin_a * cos_d)
+                        + Dttcrp0 * (d_ij_s * sin_a * sin_d)
                         + (Dttcrp0 * bond_length + tcrp[0] * d_ij_t)
                         * (d_ijk_s * cos_a * sin_d 
                             + d_ijkl_s * sin_a * cos_d)
@@ -524,7 +524,7 @@ def get_curvature_tensor_kernel_numba(xyz, B, conn, bl, ang, dih, valid_frame):
                                         + bond_length * d_ijkl_t * sin_a * cos_d)
                         + tcrp[1] * (d_ij_s * d_ijk_t * cos_a * sin_d 
                                         + d_ij_s * d_ijkl_t * sin_a * cos_d)
-                        + Dttcrp1 * (d_ij_s * sin_a * cos_d)
+                        + Dttcrp1 * (d_ij_s * sin_a * sin_d)
                         + (Dttcrp1 * bond_length + tcrp[1] * d_ij_t)
                         * (d_ijk_s * cos_a * sin_d 
                             + d_ijkl_s * sin_a * cos_d)
@@ -560,7 +560,7 @@ def get_curvature_tensor_kernel_numba(xyz, B, conn, bl, ang, dih, valid_frame):
                                         + bond_length * d_ijkl_t * sin_a * cos_d)
                         + tcrp[2] * (d_ij_s * d_ijk_t * cos_a * sin_d 
                                         + d_ij_s * d_ijkl_t * sin_a * cos_d)
-                        + Dttcrp2 * (d_ij_s * sin_a * cos_d)
+                        + Dttcrp2 * (d_ij_s * sin_a * sin_d)
                         + (Dttcrp2 * bond_length + tcrp[2] * d_ij_t)
                         * (d_ijk_s * cos_a * sin_d 
                             + d_ijkl_s * sin_a * cos_d)
@@ -1178,7 +1178,7 @@ class ZmatUtils:
                                                + bond_length * ZmatUtils.kronecker_delta(ijkl, t) * np.sin(bond_angle) * np.cos(dihedral_angle))
                                 + tcrp[c] * (ZmatUtils.kronecker_delta(ij, s) * ZmatUtils.kronecker_delta(ijk, t) * np.cos(bond_angle) * np.sin(dihedral_angle) 
                                              + ZmatUtils.kronecker_delta(ij, s) * ZmatUtils.kronecker_delta(ijkl, t) * np.sin(bond_angle) * np.cos(dihedral_angle))
-                                + Dttcrp[c] * (ZmatUtils.kronecker_delta(ij, s) * np.sin(bond_angle) * np.cos(dihedral_angle))
+                                + Dttcrp[c] * (ZmatUtils.kronecker_delta(ij, s) * np.sin(bond_angle) * np.sin(dihedral_angle))
                                 + (Dttcrp[c] * bond_length + tcrp[c] * ZmatUtils.kronecker_delta(ij, t))
                                 * (ZmatUtils.kronecker_delta(ijk, s) * np.cos(bond_angle) * np.sin(dihedral_angle) 
                                    + ZmatUtils.kronecker_delta(ijkl, s) * np.sin(bond_angle) * np.cos(dihedral_angle))
@@ -1216,8 +1216,8 @@ class ZmatUtils:
                 sin_a = np.sin(bond_angle)
                 cos_a = np.cos(bond_angle)
                 if zmat_conn[2][1] == 0:
-                    K[6, 1, 2] = sin_a
-                    K[6, 2, 1] = sin_a
+                    K[6, 1, 2] = -sin_a
+                    K[6, 2, 1] = -sin_a
                     K[6, 2, 2] = -bond_length * cos_a
                     K[7, 1, 2] = cos_a
                     K[7, 2, 1] = cos_a
@@ -1357,7 +1357,7 @@ class ZmatUtils:
                                                + bond_length * d_ijkl_t * sin_a * cos_d)
                                 + tcrp * (d_ij_s * d_ijk_t * cos_a * sin_d 
                                              + d_ij_s * d_ijkl_t * sin_a * cos_d)
-                                + Dttcrp * (d_ij_s * sin_a * cos_d)
+                                + Dttcrp * (d_ij_s * sin_a * sin_d)
                                 + (Dttcrp * bond_length + tcrp * d_ij_t)
                                 * (d_ijk_s * cos_a * sin_d 
                                    + d_ijkl_s * sin_a * cos_d)
