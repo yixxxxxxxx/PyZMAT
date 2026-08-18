@@ -1,5 +1,6 @@
 import numpy as np
 from numpy.testing import assert_allclose
+from ase.units import Bohr, Ha
 
 from pyzmat import ParseUtils, PrintUtils, ZMatrix
 
@@ -85,3 +86,64 @@ O1 C2 C1 H1
         ("H", 0, 1, None),
         ("O", 1, 0, 2),
     ]
+
+
+def test_orca_output_parser_selects_final_blocks(tmp_path):
+    output = tmp_path / "orca.out"
+    output.write_text(
+        """====================
+INPUT FILE
+====================
+| 1> * gzmt 0 1
+| 2> C
+| 3> C 1 1.42
+| 4> H 1 1.09 2 112.0
+| 5> O 1 1.36 2 108.0 3 63.0
+| 6> *
+====================
+--------------------
+CARTESIAN COORDINATES (ANGSTROEM)
+--------------------
+C 9.0 9.0 9.0
+C 10.0 9.0 9.0
+
+FINAL SINGLE POINT ENERGY -1.0
+FINAL ENERGY EVALUATION AT THE STATIONARY POINT
+--------------------
+CARTESIAN COORDINATES (ANGSTROEM)
+--------------------
+C 0.0 0.0 0.0
+C 1.42 0.0 0.0
+H -0.407300 1.010983 0.0
+O -0.420308 1.214732 0.563402
+
+FINAL SINGLE POINT ENERGY -2.0
+--------------------
+CARTESIAN GRADIENT
+--------------------
+1 C : 0.1 0.2 0.3
+2 C : 0.4 0.5 0.6
+3 H : 0.7 0.8 0.9
+4 O : 1.0 1.1 1.2
+--------------------
+""",
+        encoding="utf-8",
+    )
+
+    zmat, conn, constraints, energy, forces = ParseUtils.parse_orca_output(output)
+
+    assert conn == [
+        ("C", None, None, None),
+        ("C", 0, None, None),
+        ("H", 0, 1, None),
+        ("O", 0, 1, 2),
+    ]
+    assert constraints.bonds == constraints.angles == constraints.dihedrals == []
+    assert_allclose(energy, -2.0 * Ha)
+    assert_allclose(zmat[1][1], 1.42)
+    factor = -Ha / Bohr
+    expected_forces = np.asarray(
+        [[0.1, -0.2, -0.3], [0.4, -0.5, -0.6],
+         [0.7, -0.8, -0.9], [1.0, -1.1, -1.2]]
+    ) * factor
+    assert_allclose(forces, expected_forces, rtol=1e-7)

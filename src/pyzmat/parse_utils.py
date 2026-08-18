@@ -53,6 +53,11 @@ NUM_RE = re.compile(rf'^{_FLOAT}$', re.IGNORECASE)
 # INTERNAL COORDS block delimiters
 DASH5_RE = re.compile(r'^\s*-{5,}\s*$')
 TITLE_INTERNAL_RE = re.compile(r'^\s*INTERNAL COORDINATES\s*\(ANGSTROEM\)\s*$', re.IGNORECASE)
+STATIONARY_POINT_RE = re.compile(r'FINAL ENERGY EVALUATION AT THE STATIONARY POINT', re.IGNORECASE)
+TITLE_CARTESIAN_RE = re.compile(r'^\s*CARTESIAN COORDINATES\s*\(ANGSTROEM\)\s*$', re.IGNORECASE)
+CARTESIAN_ROW_RE = re.compile(
+    rf'^\s*([A-Za-z]{{1,3}})\s+({_FLOAT})\s+({_FLOAT})\s+({_FLOAT})\s*$'
+)
 
 
 
@@ -1345,17 +1350,16 @@ class ParseUtils:
         return zconn
 
     @staticmethod
-    def _parse_final_atoms(lines: List[str]) -> Atoms:
+    def _parse_final_atoms(lines: List[str], bounds: Optional[Tuple[int, int]] = None) -> Atoms:
         """
         Build an ASE Atoms from the final 'CARTESIAN COORDINATES (ANGSTROEM)' table
         that follows the stationary-point banner.
         """
-        start, end = ParseUtils._find_final_xyz_after_stationary_point(lines)
+        start, end = bounds or ParseUtils._find_final_xyz_after_stationary_point(lines)
         symbols: List[str] = []
         positions: List[Tuple[float, float, float]] = []
-        row_re = re.compile(r'^\s*([A-Za-z]{1,3})\s+([-+0-9.eE]+)\s+([-+0-9.eE]+)\s+([-+0-9.eE]+)\s*$')
         for k in range(start, end):
-            m = row_re.match(lines[k])
+            m = CARTESIAN_ROW_RE.match(lines[k])
             if not m:
                 break
             symbols.append(m.group(1))
@@ -1378,14 +1382,22 @@ class ParseUtils:
         return energy_eV
 
     @staticmethod
-    def _parse_forces(lines: List[str]) -> List[float]:
+    def _parse_forces(
+        lines: List[str],
+        standard_header: Optional[int] = None,
+        mp2_header: Optional[int] = None,
+        scanned: bool = False,
+    ) -> List[float]:
         # ----------------------------
         # 1. Try standard CARTESIAN GRADIENT block
         # ----------------------------
         headers = []
-        for i in range(len(lines) - 2):
-            if DASH_RE.match(lines[i]) and TITLE_GRAD_RE.match(lines[i + 1]) and DASH_RE.match(lines[i + 2]):
-                headers.append(i)
+        if standard_header is None and not scanned:
+            for i in range(len(lines) - 2):
+                if DASH_RE.match(lines[i]) and TITLE_GRAD_RE.match(lines[i + 1]) and DASH_RE.match(lines[i + 2]):
+                    headers.append(i)
+        else:
+            headers.append(standard_header)
 
         if headers:
             start = headers[-1] + 3
@@ -1416,11 +1428,11 @@ class ParseUtils:
             # -----------------------------------------------------------
             # 2. Try MP2 gradient format: "The final MP2 gradient"
             # -----------------------------------------------------------
-            mp2_header = None
-            for i, L in enumerate(lines):
-                if MP2_TITLE_RE.match(L):
-                    mp2_header = i
-                    break
+            if mp2_header is None and not scanned:
+                for i, L in enumerate(lines):
+                    if MP2_TITLE_RE.match(L):
+                        mp2_header = i
+                        break
 
             if mp2_header is None:
                 raise ValueError("No gradient block found (neither CARTESIAN nor MP2).")
@@ -1462,6 +1474,54 @@ class ParseUtils:
         forces = np.array(forces).reshape(-1, 3) @ R.T
         return forces
 
+    @staticmethod
+    def _scan_orca_output(lines: List[str]):
+        """Collect repeatedly requested ORCA sections in one pass over the file."""
+        last_banner = None
+        coordinate_blocks = []
+        energy_eV = None
+        standard_gradient_header = None
+        first_mp2_header = None
+
+        for i, line in enumerate(lines):
+            upper_line = line.upper()
+            if "FINAL ENERGY EVALUATION" in upper_line and STATIONARY_POINT_RE.search(line):
+                last_banner = i
+
+            if "FINAL" in upper_line and "ENERGY" in upper_line:
+                energy_match = ENERGY_RE.search(line)
+                if energy_match:
+                    energy_eV = float(energy_match.group(1)) * Ha
+
+            if first_mp2_header is None and "MP2" in upper_line and MP2_TITLE_RE.match(line):
+                first_mp2_header = i
+
+            if i + 2 >= len(lines) or "-" not in line or not DASH_RE.match(line):
+                continue
+
+            if TITLE_GRAD_RE.match(lines[i + 1]) and DASH_RE.match(lines[i + 2]):
+                standard_gradient_header = i
+
+            if TITLE_CARTESIAN_RE.match(lines[i + 1]) and DASH_RE.match(lines[i + 2]):
+                start = i + 3
+                end = start
+                while end < len(lines) and CARTESIAN_ROW_RE.match(lines[end]):
+                    end += 1
+                coordinate_blocks.append((i, start, end))
+
+        if last_banner is not None:
+            coordinates = next(
+                ((start, end) for header, start, end in coordinate_blocks if header >= last_banner),
+                None,
+            )
+        else:
+            coordinates = None
+        if coordinates is None and coordinate_blocks:
+            _, start, end = coordinate_blocks[-1]
+            coordinates = (start, end)
+
+        return coordinates, energy_eV, standard_gradient_header, first_mp2_header
+
 
     # --------------------------- public API ---------------------------
     @staticmethod
@@ -1481,6 +1541,8 @@ class ParseUtils:
         with open(orcarpt_path, 'r', encoding='utf-8', errors='ignore') as f:
             lines = f.readlines()
 
+        coordinates, energy_eV, gradient_header, mp2_header = ParseUtils._scan_orca_output(lines)
+
         # INPUT FILE (first) → constraints + gzmt connectivity
         inp_bounds = ParseUtils._find_first_inputfile_block(lines)
         if inp_bounds is None:
@@ -1494,16 +1556,24 @@ class ParseUtils:
         zmat_conn = ParseUtils._parse_gzmt_zmat_conn_from_inputfile(lines, ifirst, ilast)
 
         # final xyz → ASE Atoms
-        atoms = ParseUtils._parse_final_atoms(lines)
+        if coordinates is None:
+            raise ValueError("Could not locate a 'CARTESIAN COORDINATES (ANGSTROEM)' table.")
+        atoms = ParseUtils._parse_final_atoms(lines, coordinates)
 
         # zmat from Atoms + connectivity
         zmat = ZmatUtils.atoms_2_zmat(atoms, zmat_conn)
 
         # energy & forces from the usual places
-        energy_eV = ParseUtils._parse_energy(lines)
+        if energy_eV is None:
+            raise ValueError("Final single point energy not found.")
         # forces (may not exist for some methods, e.g. xTB OPT)
         try:
-            forces_eV_per_A = ParseUtils._parse_forces(lines)
+            forces_eV_per_A = ParseUtils._parse_forces(
+                lines,
+                standard_header=gradient_header,
+                mp2_header=mp2_header,
+                scanned=True,
+            )
 
             if forces_eV_per_A is None or len(forces_eV_per_A) == 0:
                 raise ValueError("No gradients found")
@@ -1517,4 +1587,3 @@ class ParseUtils:
             forces_eV_per_A = None
 
         return zmat, zmat_conn, constraints, energy_eV, forces_eV_per_A
-

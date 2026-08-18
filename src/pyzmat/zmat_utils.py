@@ -1,6 +1,8 @@
 import numpy as np
 from ase import Atoms
+from ase.geometry import get_angles, get_dihedrals
 import copy
+import math
 from functools import wraps
 
 
@@ -811,19 +813,54 @@ class ZmatUtils:
         if len(zmat_conn) != len(atoms):
             raise ValueError("Length of zmat_conn must match the number of atoms in the atoms object.")
     
-        symbols = atoms.get_chemical_symbols()
-        zmat = []
-        
-        for i, conn in enumerate(zmat_conn):
+        for conn in zmat_conn:
             if not (isinstance(conn, tuple) and len(conn) == 4):
                 raise ValueError("Each connectivity in zmat_conn must be a tuple of four elements (symbol, bond, angle, dihedral).")
-            bond_ref = conn[1]
-            angle_ref = conn[2]
-            dihedral_ref = conn[3]
-            bond_length = None if bond_ref is None else atoms.get_distance(i, bond_ref)
-            bond_angle = None if angle_ref is None else atoms.get_angle(i, bond_ref, angle_ref)
-            dihedral_angle = None if dihedral_ref is None else atoms.get_dihedral(i, bond_ref, angle_ref, dihedral_ref)
-            zmat.append([symbols[i], bond_length, bond_angle, dihedral_angle])
+
+        symbols = atoms.get_chemical_symbols()
+        positions = atoms.positions
+        n_atoms = len(atoms)
+
+        bond_rows = [i for i, conn in enumerate(zmat_conn) if conn[1] is not None]
+        angle_rows = [i for i, conn in enumerate(zmat_conn) if conn[2] is not None]
+        dihedral_rows = [i for i, conn in enumerate(zmat_conn) if conn[3] is not None]
+
+        bond_values = {}
+        if bond_rows:
+            refs = np.fromiter((zmat_conn[i][1] for i in bond_rows), dtype=np.intp)
+            rows = np.asarray(bond_rows, dtype=np.intp)
+            values = np.linalg.norm(positions[rows] - positions[refs], axis=1)
+            bond_values = dict(zip(bond_rows, values))
+
+        angle_values = {}
+        if angle_rows:
+            rows = np.asarray(angle_rows, dtype=np.intp)
+            bonds = np.fromiter((zmat_conn[i][1] for i in angle_rows), dtype=np.intp)
+            refs = np.fromiter((zmat_conn[i][2] for i in angle_rows), dtype=np.intp)
+            values = get_angles(positions[rows] - positions[bonds], positions[refs] - positions[bonds])
+            angle_values = dict(zip(angle_rows, values))
+
+        dihedral_values = {}
+        if dihedral_rows:
+            rows = np.asarray(dihedral_rows, dtype=np.intp)
+            bonds = np.fromiter((zmat_conn[i][1] for i in dihedral_rows), dtype=np.intp)
+            angles = np.fromiter((zmat_conn[i][2] for i in dihedral_rows), dtype=np.intp)
+            refs = np.fromiter((zmat_conn[i][3] for i in dihedral_rows), dtype=np.intp)
+            values = get_dihedrals(
+                positions[bonds] - positions[rows],
+                positions[angles] - positions[bonds],
+                positions[refs] - positions[angles],
+            )
+            dihedral_values = dict(zip(dihedral_rows, values))
+
+        zmat = []
+        for i in range(n_atoms):
+            zmat.append([
+                symbols[i],
+                bond_values.get(i),
+                angle_values.get(i),
+                dihedral_values.get(i),
+            ])
     
         return zmat
 
@@ -930,15 +967,15 @@ class ZmatUtils:
             if zmat[2][1] is None or zmat[2][2] is None:
                 raise ValueError("Bond length or bond angle for the third atom is missing.")
             bond_length = zmat[2][1]
-            bond_angle = np.radians(zmat[2][2])
+            bond_angle = math.radians(zmat[2][2])
             ref = zmat_conn[2][1]
             if ref == 0:
-                x = bond_length * np.cos(bond_angle)
-                y = bond_length * np.sin(bond_angle)
+                x = bond_length * math.cos(bond_angle)
+                y = bond_length * math.sin(bond_angle)
                 xyz[2] = [x, y, 0.0]
             elif ref == 1:
-                x = zmat[1][1] - bond_length * np.cos(bond_angle)
-                y = - bond_length * np.sin(bond_angle)
+                x = zmat[1][1] - bond_length * math.cos(bond_angle)
+                y = - bond_length * math.sin(bond_angle)
                 xyz[2] = [x, y, 0.0]
             else:
                 raise ValueError("Invalid connectivity for the third atom; reference must be 0 or 1.")
@@ -948,18 +985,46 @@ class ZmatUtils:
                 if zmat[i][1] is None or zmat[i][2] is None or zmat[i][3] is None:
                     raise ValueError(f"Internal coordinate(s) for atom {i+1} are missing.")
                 bond_length = zmat[i][1]
-                bond_angle = np.radians(zmat[i][2])
-                dihedral_angle = np.radians(zmat[i][3])
+                bond_angle = math.radians(zmat[i][2])
+                dihedral_angle = math.radians(zmat[i][3])
                 try:
                     _, j, k, l = zmat_conn[i]
                 except Exception:
                     raise ValueError(f"Connectivity for atom {i+1} is invalid.")
-                r_j, r_k, r_l, tvec1, tvec2, r_kj, r_kl, tcrp, ncrp = ZmatUtils.form_orthonormal_frame(xyz, j, k, l)
-                x = bond_length * np.sin(bond_angle) * np.cos(dihedral_angle)
-                y = bond_length * np.sin(bond_angle) * np.sin(dihedral_angle)
-                z = bond_length * np.cos(bond_angle)
-                local_coords = x * ncrp + y * tcrp - z * tvec1
-                xyz[i] = r_j + local_coords
+                r_j = xyz[j]
+                r_k = xyz[k]
+                r_l = xyz[l]
+                kj0 = r_j[0] - r_k[0]
+                kj1 = r_j[1] - r_k[1]
+                kj2 = r_j[2] - r_k[2]
+                kl0 = r_l[0] - r_k[0]
+                kl1 = r_l[1] - r_k[1]
+                kl2 = r_l[2] - r_k[2]
+                norm_rkj = math.sqrt(kj0 * kj0 + kj1 * kj1 + kj2 * kj2)
+                norm_rkl = math.sqrt(kl0 * kl0 + kl1 * kl1 + kl2 * kl2)
+                if norm_rkj == 0:
+                    raise ValueError("Cannot form orthonormal frame: reference atoms j and k coincide (zero bond length).")
+                if norm_rkl == 0:
+                    raise ValueError("Cannot form orthonormal frame: reference atoms k and l coincide (zero bond length).")
+                t10, t11, t12 = kj0 / norm_rkj, kj1 / norm_rkj, kj2 / norm_rkj
+                t20, t21, t22 = kl0 / norm_rkl, kl1 / norm_rkl, kl2 / norm_rkl
+                tc0 = t11 * t22 - t12 * t21
+                tc1 = t12 * t20 - t10 * t22
+                tc2 = t10 * t21 - t11 * t20
+                norm_tcrp = math.sqrt(tc0 * tc0 + tc1 * tc1 + tc2 * tc2)
+                if norm_tcrp == 0:
+                    raise ValueError("Cannot form orthonormal frame: vectors tvec1 and tvec2 are parallel.")
+                tc0, tc1, tc2 = tc0 / norm_tcrp, tc1 / norm_tcrp, tc2 / norm_tcrp
+                nc0 = tc1 * t12 - tc2 * t11
+                nc1 = tc2 * t10 - tc0 * t12
+                nc2 = tc0 * t11 - tc1 * t10
+                sin_angle = math.sin(bond_angle)
+                x = bond_length * sin_angle * math.cos(dihedral_angle)
+                y = bond_length * sin_angle * math.sin(dihedral_angle)
+                z = bond_length * math.cos(bond_angle)
+                xyz[i, 0] = r_j[0] + x * nc0 + y * tc0 - z * t10
+                xyz[i, 1] = r_j[1] + x * nc1 + y * tc1 - z * t11
+                xyz[i, 2] = r_j[2] + x * nc2 + y * tc2 - z * t12
     
         atoms = Atoms(symbols = symbols, positions=xyz)
         return atoms
