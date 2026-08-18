@@ -10,9 +10,9 @@ setup(
     package_dir={"": "src"},
     install_requires=[
         "ase>=3.23.1",
-        "numpy>=1.20",
-        "scipy>=1.6"
+        "numpy>=1.20"
     ],
+    extras_require={"test": ["pytest>=7"]},
     python_requires=">=3.7",
     classifiers=[
         "Programming Language :: Python :: 3",
