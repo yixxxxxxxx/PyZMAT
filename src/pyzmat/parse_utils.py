@@ -15,6 +15,11 @@ from .zmat_utils import ZmatUtils
 _FLOAT = r'[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?'
 _INT   = r'[+-]?\d+'
 
+PARAMETER_ASSIGNMENT_RE = re.compile(
+    rf'^\s*([A-Za-z][A-Za-z0-9_]*)\s*(?:=\s*|\s+)({_FLOAT})\s*$'
+)
+CHARGE_MULTIPLICITY_RE = re.compile(r'^\s*[+-]?\d+\s+\d+(?:\s|$)')
+
 # INTERNAL COORDINATES lines like:
 # "C	  2   1   0	 1.380335007249   105.11267024	 0.00000000"
 COORD_LINE_RE = re.compile(
@@ -62,6 +67,76 @@ CARTESIAN_ROW_RE = re.compile(
 
 
 class ParseUtils:
+    @staticmethod
+    def _is_charge_multiplicity_line(line):
+        return CHARGE_MULTIPLICITY_RE.match(line) is not None
+
+    @staticmethod
+    def _parse_parameter_assignment(line):
+        match = PARAMETER_ASSIGNMENT_RE.match(line)
+        if match is None:
+            return None
+        return match.group(1), float(match.group(2))
+
+    @staticmethod
+    def _internal_coordinate_index(name, prefix):
+        suffix = name[len(prefix):]
+        if not suffix.isdigit():
+            return None
+        return int(suffix) - 1
+
+    @staticmethod
+    def parse_csp_zmat(filename):
+        """
+        Parse the standalone numeric ``# ZMAT v1`` files emitted by CSPToolbox.
+
+        Returns
+        -------
+        tuple
+            ``(zmat, zmat_conn)`` where references are converted from the
+            CSPToolbox/Gaussian 1-based convention to PyZMAT's 0-based convention.
+        """
+        with open(filename, "r") as f:
+            lines = [line.strip() for line in f if line.strip() and not line.lstrip().startswith("#")]
+
+        zmat = []
+        zmat_conn = []
+        for row_index, line in enumerate(lines):
+            tokens = line.split()
+            if len(tokens) not in {1, 3, 5, 7}:
+                raise ValueError(
+                    f"Invalid CSPToolbox Z-matrix row {row_index + 1}: expected 1, 3, 5, or 7 tokens."
+                )
+
+            atom = re.match(r"([A-Za-z]+)", tokens[0])
+            if atom is None:
+                raise ValueError(f"Invalid atom label in CSPToolbox Z-matrix row {row_index + 1}: {tokens[0]}")
+            symbol = atom.group(1)
+            bond = angle = dihed = None
+            b_ref = a_ref = d_ref = None
+
+            if len(tokens) >= 3:
+                b_ref = int(tokens[1]) - 1
+                bond = float(tokens[2])
+            if len(tokens) >= 5:
+                a_ref = int(tokens[3]) - 1
+                angle = float(tokens[4])
+            if len(tokens) == 7:
+                d_ref = int(tokens[5]) - 1
+                dihed = float(tokens[6])
+
+            refs = [ref for ref in (b_ref, a_ref, d_ref) if ref is not None]
+            if any(ref < 0 or ref >= row_index for ref in refs):
+                raise ValueError(
+                    f"Invalid forward/self reference in CSPToolbox Z-matrix row {row_index + 1}."
+                )
+
+            zmat.append([symbol, bond, angle, dihed])
+            zmat_conn.append((symbol, b_ref, a_ref, d_ref))
+
+        if not zmat:
+            raise ValueError("The provided CSPToolbox Z-matrix file is empty.")
+        return zmat, zmat_conn
 
     @staticmethod
     def get_zmat_def(out_file):
@@ -223,30 +298,37 @@ class ParseUtils:
 
         for line in lines:
             low = line.lower()
-            if state == "search" and line.startswith("0 "):
+            if state == "search" and ParseUtils._is_charge_multiplicity_line(line):
                 state = "zmat"
                 continue
             if state == "zmat" and low.startswith("variables"):
                 state = "vars"
+                continue
+            if state == "zmat" and low.startswith("constants"):
+                state = "consts"
                 continue
             if state == "vars" and low.startswith("constants"):
                 state = "consts"
                 continue
 
             if state == "zmat":
+                assignment = ParseUtils._parse_parameter_assignment(line)
+                if assignment is not None:
+                    key, value = assignment
+                    vars_dict[key] = value
+                    state = "vars"
+                    continue
                 zmatrix_lines.append(line)
             elif state == "vars":
-                key, *rest = line.split()
-                try:
-                    vars_dict[key] = float(rest[0])
-                except (IndexError, ValueError):
-                    pass
+                assignment = ParseUtils._parse_parameter_assignment(line)
+                if assignment is not None:
+                    key, value = assignment
+                    vars_dict[key] = value
             elif state == "consts":
-                key, *rest = line.split()
-                try:
-                    consts_dict[key] = float(rest[0])
-                except (IndexError, ValueError):
-                    pass
+                assignment = ParseUtils._parse_parameter_assignment(line)
+                if assignment is not None:
+                    key, value = assignment
+                    consts_dict[key] = value
 
         # combine params
         params = {**vars_dict, **consts_dict}
@@ -284,11 +366,17 @@ class ParseUtils:
         for key, val in consts_dict.items():
             lk = key.lower()
             if lk.startswith("bnd"):
-                bonds_c.append((int(lk[3:]) - 1, val))
+                index = ParseUtils._internal_coordinate_index(lk, "bnd")
+                if index is not None:
+                    bonds_c.append((index, val))
             elif lk.startswith("ang"):
-                ang_c.append((int(lk[3:]) - 1, val))
+                index = ParseUtils._internal_coordinate_index(lk, "ang")
+                if index is not None:
+                    ang_c.append((index, val))
             elif lk.startswith("dih"):
-                dih_c.append((int(lk[3:]) - 1, val))
+                index = ParseUtils._internal_coordinate_index(lk, "dih")
+                if index is not None:
+                    dih_c.append((index, val))
 
         constraints = Constraints(bonds=bonds_c, angles=ang_c, dihedrals=dih_c)
         return zmat, zmat_conn, constraints

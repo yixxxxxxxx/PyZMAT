@@ -63,6 +63,12 @@ class ZMatrix:
         return obj
 
     @classmethod
+    def load_from_csp_zmat(cls, filename: str) -> "ZMatrix":
+        zmat, zmat_conn = ParseUtils.parse_csp_zmat(filename)
+        obj = cls(zmat = zmat, zmat_conn = zmat_conn, name = filename)
+        return obj
+
+    @classmethod
     def load_from_orca_output(cls, filename: str) -> "ZMatrix":
         zmat, zmat_conn, constraints, energy, forces_cart = ParseUtils.parse_orca_output(filename)
         if forces_cart is not None:
