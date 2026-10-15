@@ -63,8 +63,10 @@ class ZMatrix:
         return obj
 
     @classmethod
-    def load_from_orca_output(cls, filename: str) -> "ZMatrix":
-        zmat, zmat_conn, constraints, energy, forces_cart = ParseUtils.parse_orca_output(filename)
+    def load_from_orca_output(cls, filename: str, *, parse_forces: bool = True) -> "ZMatrix":
+        """Load geometry and energy, optionally skipping forces and their B transform."""
+        zmat, zmat_conn, constraints, energy, forces_cart = ParseUtils.parse_orca_output(
+            filename, parse_forces=parse_forces)
         if forces_cart is not None:
             forces_cart = np.asarray(forces_cart).reshape(-1, 1)
             B = ZmatUtils.get_B_matrix(zmat, zmat_conn)

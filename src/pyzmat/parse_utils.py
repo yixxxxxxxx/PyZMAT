@@ -1525,7 +1525,7 @@ class ParseUtils:
 
     # --------------------------- public API ---------------------------
     @staticmethod
-    def parse_orca_output(orcarpt_path: str):
+    def parse_orca_output(orcarpt_path: str, *, parse_forces: bool = True):
         """
         Parse an ORCA output file and return:
             zmat, zmat_conn, constraints, energy_eV, forces_eV_per_A
@@ -1536,7 +1536,8 @@ class ParseUtils:
             that appears after 'FINAL ENERGY EVALUATION AT THE STATIONARY POINT'.
           - zmat: built via ZmatUtils.atoms_2_zmat(atoms, zmat_conn).
           - constraints: parsed from the same (first) INPUT FILE block if present.
-          - Energy & forces: unchanged (last reported).
+          - Energy & forces: last reported. With parse_forces=False, skip force
+            parsing and return None for forces without a missing-force warning.
         """
         with open(orcarpt_path, 'r', encoding='utf-8', errors='ignore') as f:
             lines = f.readlines()
@@ -1566,6 +1567,8 @@ class ParseUtils:
         # energy & forces from the usual places
         if energy_eV is None:
             raise ValueError("Final single point energy not found.")
+        if not parse_forces:
+            return zmat, zmat_conn, constraints, energy_eV, None
         # forces (may not exist for some methods, e.g. xTB OPT)
         try:
             forces_eV_per_A = ParseUtils._parse_forces(

@@ -1680,6 +1680,44 @@ class ZmatUtils:
 
     
     @staticmethod
+    def get_coordinate_derivatives_torch(q, zmat_conn, *, validate=True):
+        """Return batched Cartesian positions, B and K on ``q.device``.
+
+        ``q`` is a float32/float64 Torch tensor of shape ``(..., 3*N-6)``:
+        [r1, r2, angle2, r3, angle3, dihedral3, ...]. All angles are in
+        RADIANS, unlike the list-based Z-matrix API. ``zmat_conn`` is the
+        usual host-side list of (symbol, j, k, l) rows, shared by the batch;
+        references must be distinct earlier atoms. At least 3 atoms are needed.
+
+        Outputs have shapes ``(..., N, 3)``, ``(..., 3*N-6, 3*N)`` and
+        ``(..., 3*N, 3*N-6, 3*N-6)``. B = dr/dq (internal axis first),
+        K = d²r/dq², in the same canonical frame as ``zmat_2_atoms``.
+        Device and dtype are preserved. Torch is an optional dependency.
+
+        Explicit analytical chain rules support ``torch.inference_mode()``.
+        Atom placement is sequential; batches and derivative axes are vectorized.
+        Dense K storage scales as batch_size * 3*N * (3*N-6)**2 elements.
+        Chunk large batches at the caller to limit peak memory.
+
+        Validation raises for nonfinite coordinates, nonpositive lengths or
+        degenerate reference frames and synchronizes the device once. Set
+        ``validate=False`` only for trusted inputs to avoid that synchronization;
+        singular inputs can then produce NaNs/Infs. Connectivity/shape/dtype
+        checks are always performed. Group different topologies into separate
+        calls; padding and per-sample connectivity are not supported.
+        """
+        from .torch_derivatives import get_coordinate_derivatives
+
+        return get_coordinate_derivatives(q, zmat_conn, validate=validate)
+
+    @staticmethod
+    def get_curvature_tensor_torch(q, zmat_conn, *, validate=True):
+        """GPU/batched K; see ``get_coordinate_derivatives_torch`` for inputs."""
+        return ZmatUtils.get_coordinate_derivatives_torch(
+            q, zmat_conn, validate=validate
+        )[2]
+
+    @staticmethod
     def get_curvature_tensor_numba(zmat, zmat_conn):
         """
         You supply:

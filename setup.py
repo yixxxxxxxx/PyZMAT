@@ -12,7 +12,7 @@ setup(
         "ase>=3.23.1",
         "numpy>=1.20"
     ],
-    extras_require={"test": ["pytest>=7"]},
+    extras_require={"test": ["pytest>=7"], "torch": ["torch>=2.0"]},
     python_requires=">=3.7",
     classifiers=[
         "Programming Language :: Python :: 3",

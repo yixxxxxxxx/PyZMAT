@@ -88,7 +88,7 @@ O1 C2 C1 H1
     ]
 
 
-def test_orca_output_parser_selects_final_blocks(tmp_path):
+def test_orca_output_parser_selects_final_blocks(tmp_path, monkeypatch):
     output = tmp_path / "orca.out"
     output.write_text(
         """====================
@@ -131,6 +131,23 @@ CARTESIAN GRADIENT
     )
 
     zmat, conn, constraints, energy, forces = ParseUtils.parse_orca_output(output)
+    assert ZMatrix.load_from_orca_output(output).forces is not None
+    with monkeypatch.context() as patch:
+        calls = []
+        def forbidden(*args, **kwargs):
+            calls.append(True)
+            raise AssertionError("Geometry-only loading must skip force parsing and B")
+        patch.setattr(ParseUtils, "_parse_forces", forbidden)
+        from pyzmat import ZmatUtils
+        patch.setattr(ZmatUtils, "get_B_matrix", forbidden)
+        plain = ParseUtils.parse_orca_output(output, parse_forces=False)
+        loaded = ZMatrix.load_from_orca_output(output, parse_forces=False)
+        assert plain[4] is None
+        assert loaded.forces is None and loaded.forces_cart is None
+        assert loaded.zmat == zmat and loaded.zmat_conn == conn
+        assert loaded.energy == energy
+        assert loaded.constraints.dihedrals == constraints.dihedrals
+        assert calls == []
 
     assert conn == [
         ("C", None, None, None),
