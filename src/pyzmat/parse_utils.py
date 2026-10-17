@@ -223,13 +223,13 @@ class ParseUtils:
 
         for line in lines:
             low = line.lower()
-            if state == "search" and line.startswith("0 "):
+            if state == "search" and re.fullmatch(r"[+-]?\d+\s+\d+", line):
                 state = "zmat"
                 continue
             if state == "zmat" and low.startswith("variables"):
                 state = "vars"
                 continue
-            if state == "vars" and low.startswith("constants"):
+            if state in {"vars", "zmat"} and low.startswith("constants"):
                 state = "consts"
                 continue
 
@@ -250,6 +250,17 @@ class ParseUtils:
 
         # combine params
         params = {**vars_dict, **consts_dict}
+        if not zmatrix_lines:
+            raise ValueError("Gaussian input contains no Z-matrix")
+
+        def coordinate(token):
+            try:
+                value = params[token] if token in params else float(token)
+            except ValueError as exc:
+                raise ValueError(f"Undefined Z-matrix coordinate: {token}") from exc
+            if not np.isfinite(value):
+                raise ValueError(f"Nonfinite Z-matrix coordinate: {token}")
+            return value
 
         # parse geometry & build constraints lists
         zmat = []
@@ -258,24 +269,29 @@ class ParseUtils:
 
         for i, line in enumerate(zmatrix_lines):
             tokens = line.split()
+            if len(tokens) != 1 + 2 * min(i, 3):
+                raise ValueError(f"Invalid Z-matrix row {i + 1}")
+            refs = [int(tokens[j]) - 1 for j in range(1, len(tokens), 2)]
+            if len(set(refs)) != len(refs) or any(ref < 0 or ref >= i for ref in refs):
+                raise ValueError(f"Invalid references in Z-matrix row {i + 1}")
             atom = re.match(r"([A-Za-z]+)", tokens[0]).group(1)
             bond = angle = dihed = None
             b_ref = a_ref = d_ref = None
 
             if len(tokens) == 3:
-                b_ref, bond = int(tokens[1]) - 1, params.get(tokens[2])
+                b_ref, bond = int(tokens[1]) - 1, coordinate(tokens[2])
             elif len(tokens) == 5:
                 b_ref = int(tokens[1]) - 1
-                bond = params.get(tokens[2])
+                bond = coordinate(tokens[2])
                 a_ref = int(tokens[3]) - 1
-                angle = params.get(tokens[4])
+                angle = coordinate(tokens[4])
             elif len(tokens) == 7:
                 b_ref = int(tokens[1]) - 1
-                bond = params.get(tokens[2])
+                bond = coordinate(tokens[2])
                 a_ref = int(tokens[3]) - 1
-                angle = params.get(tokens[4])
+                angle = coordinate(tokens[4])
                 d_ref = int(tokens[5]) - 1
-                dihed = params.get(tokens[6])
+                dihed = coordinate(tokens[6])
 
             zmat.append([atom, bond, angle, dihed])
             zmat_conn.append((atom, b_ref, a_ref, d_ref))

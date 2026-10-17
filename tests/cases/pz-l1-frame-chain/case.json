@@ -1,0 +1,43 @@
+{
+  "schema_version": 2,
+  "test_id": "pz-l1-frame-chain",
+  "package": "pyzmat",
+  "level": "L1",
+  "status": "prepared",
+  "runner": {
+    "adapter": "pytest_case",
+    "args": {
+      "nodes": [
+        "tests/test_archive.py::test_frame_transform"
+      ]
+    }
+  },
+  "limits": {
+    "wall_s": 60,
+    "cpu_s": 45,
+    "memory_mb": 4096,
+    "threads": 1
+  },
+  "toolchain": {
+    "python_modules": [
+      "numpy",
+      "ase",
+      "pytest"
+    ],
+    "environment": [],
+    "gpu_required": false
+  },
+  "tolerance_class": "T3",
+  "tolerance_bounds": {
+    "atol": 1e-09,
+    "rtol": 1e-09,
+    "units": "eV, angstrom, radian",
+    "justification": "Orthogonal transformation of both tensor axes"
+  },
+  "tags": {
+    "regime": "pz-l1-frame-chain"
+  },
+  "reference": {
+    "path": "result/reference.json"
+  }
+}

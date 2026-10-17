@@ -8,6 +8,7 @@ blocks in the format accepted by ``ZMatrix.load_from_gaussian_input``.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 import time
@@ -43,6 +44,9 @@ def parse_args() -> argparse.Namespace:
         help="MACE-OFF model size (default: large)",
     )
     parser.add_argument("--gpu", action="store_true", help="Use the GPU backend")
+    parser.add_argument("--checkpoint", type=Path, help="Local MACE checkpoint (no download)")
+    parser.add_argument("--atol", type=float, default=1e-3)
+    parser.add_argument("--rtol", type=float, default=1e-5)
     parser.add_argument(
         "--methods", nargs="+", choices=METHODS, default=list(METHODS),
         help="Methods to evaluate (default: all)",
@@ -68,10 +72,17 @@ def validate_args(args: argparse.Namespace) -> None:
     if args.input.suffix.lower() not in {".com", ".gjf"}:
         raise ValueError("Input must have a .com or .gjf extension")
     for name in ("db", "da", "dt"):
-        if getattr(args, name) <= 0.0:
+        if not np.isfinite(getattr(args, name)) or getattr(args, name) <= 0.0:
             raise ValueError(f"--{name} must be positive")
     if len(set(args.methods)) < 2:
         raise ValueError("Select at least two methods to calculate comparison metrics")
+    for name in ("atol", "rtol"):
+        if not np.isfinite(getattr(args, name)) or getattr(args, name) < 0:
+            raise ValueError(f"--{name} must be finite and nonnegative")
+    if args.checkpoint and not args.checkpoint.is_file():
+        raise FileNotFoundError(args.checkpoint)
+    if args.checkpoint and args.model == "aimnet2":
+        raise ValueError("--checkpoint requires a MACE model")
 
 
 def matrix_metrics(matrix: np.ndarray) -> dict[str, float | list[int]]:
@@ -153,18 +164,25 @@ def main() -> int:
         output_dir = args.output_dir or Path(
             f"{args.input.stem}_hessian_comparison"
         )
-        output_dir.mkdir(parents=True, exist_ok=True)
+        output_dir.mkdir(parents=True, exist_ok=False)
 
         molecule = ZMatrix.load_from_gaussian_input(str(args.input))
-        molecule.attach_calculator(
-            args.model, model_size=args.model_size, gpu=args.gpu
-        )
+        if args.checkpoint:
+            from mace.calculators import MACECalculator
+            molecule.calculator = MACECalculator(model_paths=str(args.checkpoint),
+                device="cuda" if args.gpu else "cpu", default_dtype="float64")
+            molecule.model = args.model
+        else:
+            molecule.attach_calculator(args.model, model_size=args.model_size, gpu=args.gpu)
 
         report: dict = {
             "input": str(args.input.resolve()),
             "model": args.model,
             "model_size": args.model_size,
             "gpu": args.gpu,
+            "input_sha256": hashlib.sha256(args.input.read_bytes()).hexdigest(),
+            "checkpoint_sha256": hashlib.sha256(args.checkpoint.read_bytes()).hexdigest() if args.checkpoint else None,
+            "tolerances": {"atol": args.atol, "rtol": args.rtol},
             "finite_difference_steps": {
                 "bond_angstrom": args.db,
                 "angle_degrees": args.da,
@@ -196,6 +214,9 @@ def main() -> int:
             report["comparisons"][key] = comparison_metrics(
                 matrices[first], matrices[second]
             )
+            report["comparisons"][key]["passed"] = bool(np.allclose(
+                matrices[first], matrices[second], atol=args.atol, rtol=args.rtol))
+        report["passed"] = all(v["passed"] for v in report["comparisons"].values())
 
         with (output_dir / "metrics.json").open("w", encoding="utf-8") as stream:
             json.dump(report, stream, indent=2)
@@ -203,7 +224,7 @@ def main() -> int:
 
         print_summary(report)
         print(f"\nMatrices and metrics written to {output_dir.resolve()}")
-        return 0
+        return 0 if report["passed"] else 1
     except Exception as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1

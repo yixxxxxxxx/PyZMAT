@@ -1,0 +1,89 @@
+{
+  "schema_version": 2,
+  "cases": [
+    {
+      "test_id": "pz-l0-core",
+      "path": "tests/cases/pz-l0-core",
+      "package": "pyzmat",
+      "level": "L0",
+      "status": "prepared"
+    },
+    {
+      "test_id": "pz-l0-torch",
+      "path": "tests/cases/pz-l0-torch",
+      "package": "pyzmat",
+      "level": "L0",
+      "status": "prepared"
+    },
+    {
+      "test_id": "pz-l1-force-hessian",
+      "path": "tests/cases/pz-l1-force-hessian",
+      "package": "pyzmat",
+      "level": "L1",
+      "status": "prepared"
+    },
+    {
+      "test_id": "pz-l1-cartesian-shape",
+      "path": "tests/cases/pz-l1-cartesian-shape",
+      "package": "pyzmat",
+      "level": "L1",
+      "status": "prepared"
+    },
+    {
+      "test_id": "pz-l1-frame-chain",
+      "path": "tests/cases/pz-l1-frame-chain",
+      "package": "pyzmat",
+      "level": "L1",
+      "status": "prepared"
+    },
+    {
+      "test_id": "pz-l2-hessian-methods",
+      "path": "tests/cases/pz-l2-hessian-methods",
+      "package": "pyzmat",
+      "level": "L2",
+      "status": "prepared"
+    },
+    {
+      "test_id": "pz-l2-optimise-export",
+      "path": "tests/cases/pz-l2-optimise-export",
+      "package": "pyzmat",
+      "level": "L2",
+      "status": "prepared"
+    },
+    {
+      "test_id": "pz-l2-archive-roy",
+      "path": "tests/cases/pz-l2-archive-roy",
+      "package": "pyzmat",
+      "level": "L2",
+      "status": "prepared"
+    },
+    {
+      "test_id": "pz-l2-archive-precision",
+      "path": "tests/cases/pz-l2-archive-precision",
+      "package": "pyzmat",
+      "level": "L2",
+      "status": "prepared"
+    },
+    {
+      "test_id": "pz-l3-gaussian-archive",
+      "path": "tests/cases/pz-l3-gaussian-archive",
+      "package": "pyzmat",
+      "level": "L3",
+      "status": "prepared"
+    },
+    {
+      "test_id": "pz-l3-model-derivatives",
+      "path": "tests/cases/pz-l3-model-derivatives",
+      "package": "pyzmat",
+      "level": "L3",
+      "status": "prepared"
+    },
+    {
+      "test_id": "pz-l3-cuda-batches",
+      "path": "tests/cases/pz-l3-cuda-batches",
+      "package": "pyzmat",
+      "level": "L3",
+      "status": "prepared"
+    }
+  ]
+}

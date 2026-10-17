@@ -1,0 +1,43 @@
+{
+  "schema_version": 2,
+  "test_id": "pz-l2-archive-roy",
+  "package": "pyzmat",
+  "level": "L2",
+  "status": "prepared",
+  "runner": {
+    "adapter": "pytest_case",
+    "args": {
+      "nodes": [
+        "tests/test_archive.py::test_roy_reference"
+      ]
+    }
+  },
+  "limits": {
+    "wall_s": 600,
+    "cpu_s": 480,
+    "memory_mb": 8192,
+    "threads": 1
+  },
+  "toolchain": {
+    "python_modules": [
+      "numpy",
+      "ase",
+      "pytest"
+    ],
+    "environment": [],
+    "gpu_required": false
+  },
+  "tolerance_class": "T3",
+  "tolerance_bounds": {
+    "atol": 2e-07,
+    "rtol": 1e-05,
+    "units": "Hartree/(bohr or radian)^2",
+    "justification": "Historical bound on raw Gaussian derivatives"
+  },
+  "tags": {
+    "regime": "pz-l2-archive-roy"
+  },
+  "reference": {
+    "path": "result/reference.json"
+  }
+}

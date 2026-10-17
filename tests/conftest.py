@@ -28,3 +28,5 @@ def molecule(zmat_data):
     zmat, zmat_conn = zmat_data
     constraints = Constraints(bonds=[1], angles=[2], dihedrals=[3])
     return ZMatrix(zmat, zmat_conn, constraints=constraints, name="fixture")
+
+from tier_selection import pytest_configure, pytest_collection_modifyitems

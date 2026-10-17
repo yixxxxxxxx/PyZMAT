@@ -1,0 +1,42 @@
+{
+  "schema_version": 2,
+  "test_id": "pz-l0-torch",
+  "package": "pyzmat",
+  "level": "L0",
+  "status": "prepared",
+  "runner": {
+    "adapter": "pytest_case",
+    "args": {
+      "nodes": [
+        "tests/test_torch_derivatives.py"
+      ]
+    }
+  },
+  "limits": {
+    "wall_s": 60,
+    "cpu_s": 45,
+    "memory_mb": 4096,
+    "threads": 1
+  },
+  "toolchain": {
+    "python_modules": [
+      "numpy",
+      "ase",
+      "pytest",
+      "torch"
+    ],
+    "environment": [],
+    "gpu_required": false
+  },
+  "tolerance_class": "T3",
+  "tolerance_bounds": {
+    "definition": "Numerical bounds and independent oracle are explicit in each selected test; see tests/README.md.",
+    "units": "eV, angstrom, radian; Gaussian archive Hartree, bohr, radian"
+  },
+  "tags": {
+    "regime": "pz-l0-torch"
+  },
+  "reference": {
+    "path": "result/reference.json"
+  }
+}

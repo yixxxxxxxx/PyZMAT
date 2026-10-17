@@ -1,0 +1,45 @@
+{
+  "schema_version": 2,
+  "test_id": "pz-l2-archive-precision",
+  "package": "pyzmat",
+  "level": "L2",
+  "status": "prepared",
+  "runner": {
+    "adapter": "pytest_case",
+    "args": {
+      "nodes": [
+        "tests/test_archive.py::test_vusdix_file_precision_bound",
+        "tests/test_archive.py::test_archive_cli_propagates_numerical_failure"
+      ]
+    }
+  },
+  "limits": {
+    "wall_s": 600,
+    "cpu_s": 480,
+    "memory_mb": 8192,
+    "threads": 1
+  },
+  "toolchain": {
+    "python_modules": [
+      "numpy",
+      "ase",
+      "pytest"
+    ],
+    "environment": [],
+    "gpu_required": false
+  },
+  "tolerance_class": "T3",
+  "tolerance_bounds": {
+    "atol": 2e-07,
+    "rtol": 1e-05,
+    "additional_bound": "abs(B R) deltaH abs(B R).T + abs(K) abs(R) deltaF with unit factors",
+    "units": "Hartree/(bohr or radian)^2",
+    "justification": "Propagated half-last-decimal input quantization; original strict failure remains asserted"
+  },
+  "tags": {
+    "regime": "pz-l2-archive-precision"
+  },
+  "reference": {
+    "path": "result/reference.json"
+  }
+}

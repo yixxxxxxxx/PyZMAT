@@ -291,6 +291,9 @@ class PrintUtils:
 		if H.shape != (m, m):
 			raise ValueError(f"hessian shape {H.shape} must be ({m}, {m})")
 
+		if not np.isfinite(forces).all() or not np.isfinite(H).all():
+			raise ValueError("forces and hessian must be finite")
+
 		# Constrained DOFs should appear at the end.
 		const_names = [f"bnd{idx+1}" for idx, _ in constraints.bonds] + \
 					  [f"ang{idx+1}" for idx, _ in constraints.angles] + \

@@ -1,0 +1,14 @@
+#!/bin/bash -l
+#PBS -N pyzmat-tiers
+#PBS -q hx
+#PBS -l walltime=04:00:00
+#PBS -l select=1:ncpus=4:mem=32gb:ngpus=1:gpu_type=A100
+#PBS -j oe
+set -euo pipefail
+cd "${PBS_O_WORKDIR:?Submit from the PyZMAT repository root}"
+: "${LAM_PYTHON:?Set to the scientific environment Python}"
+: "${LAM_MODEL:?Set to a local float64 MACE checkpoint}"
+: "${TIER_RESULTS:?Set to a fresh output root}"
+export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMBA_NUM_THREADS=1
+export PYTHONPATH="$PWD/src${PYTHONPATH:+:$PYTHONPATH}"
+"$LAM_PYTHON" tools/run_tiers.py --level L3 --out "$TIER_RESULTS" --require-all

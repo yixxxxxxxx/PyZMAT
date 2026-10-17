@@ -93,3 +93,8 @@ geometry, connectivity, constraints and energy while skipping force parsing
 and the CPU Wilson B transformation. Both `forces` and `forces_cart` are None.
 The underlying `ParseUtils.parse_orca_output` accepts the same keyword and
 returns None in its force slot. The default remains `parse_forces=True`.
+
+## Testing
+
+See [the four-tier test guide](tests/README.md) for kernel, structure, workflow
+and allocated campaign checks, including the curated Gaussian Hessian fixtures.

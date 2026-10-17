@@ -1,0 +1,41 @@
+{
+  "schema_version": 2,
+  "test_id": "pz-l2-optimise-export",
+  "package": "pyzmat",
+  "level": "L2",
+  "status": "prepared",
+  "runner": {
+    "adapter": "pytest_case",
+    "args": {
+      "nodes": [
+        "tests/test_hessian_workflow.py::test_bounded_ase_optimization_and_export"
+      ]
+    }
+  },
+  "limits": {
+    "wall_s": 600,
+    "cpu_s": 480,
+    "memory_mb": 8192,
+    "threads": 1
+  },
+  "toolchain": {
+    "python_modules": [
+      "numpy",
+      "ase",
+      "pytest"
+    ],
+    "environment": [],
+    "gpu_required": false
+  },
+  "tolerance_class": "T3",
+  "tolerance_bounds": {
+    "definition": "Numerical bounds and independent oracle are explicit in each selected test; see tests/README.md.",
+    "units": "eV, angstrom, radian; Gaussian archive Hartree, bohr, radian"
+  },
+  "tags": {
+    "regime": "pz-l2-optimise-export"
+  },
+  "reference": {
+    "path": "result/reference.json"
+  }
+}

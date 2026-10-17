@@ -1,0 +1,110 @@
+[
+  {
+    "source": "hess_debug/roy/new_lam_00001/cart-2-z/new_lam_00001.log",
+    "path": "roy_new_lam_00001/cart-2-z/new_lam_00001.log",
+    "sha256": "1b344d71e22aa41a3bf3f9894d2ea9bb693ed853123df5e8a2100900b2792333",
+    "bytes": 206266
+  },
+  {
+    "source": "hess_debug/roy/new_lam_00001/cart-2-z/uniform_lam_00001.fchk",
+    "path": "roy_new_lam_00001/cart-2-z/uniform_lam_00001.fchk",
+    "sha256": "5d73d984c61ef0522577194b12ed9546d898b949729dedd03330e88b32f5897c",
+    "bytes": 1674850
+  },
+  {
+    "source": "hess_debug/roy/new_lam_00001/cart-2-z/new_lam_00001.com",
+    "path": "roy_new_lam_00001/cart-2-z/new_lam_00001.com",
+    "sha256": "d39739122630569cf6323161f0a0bba59cc44ac08d1ae6ef6f9e490b4ed08748",
+    "bytes": 2868
+  },
+  {
+    "source": "hess_debug/roy/new_lam_00001/z/uniform_lam_00001_zmat.fchk",
+    "path": "roy_new_lam_00001/z/uniform_lam_00001_zmat.fchk",
+    "sha256": "b40630772e427bba02fd24500e04584dcb62a5cc8dcd26fbabceac6747c22778",
+    "bytes": 1660436
+  },
+  {
+    "source": "hess_debug/roy/new_lam_00001/z/new_lam_00001.log",
+    "path": "roy_new_lam_00001/z/new_lam_00001.log",
+    "sha256": "f7dc0c1a06208f3aa369af0f4b1d4dd8c8bb840564775fdbdf8c4820f691b45a",
+    "bytes": 168292
+  },
+  {
+    "source": "hess_debug/roy/new_lam_00001/z/new_lam_00001.com",
+    "path": "roy_new_lam_00001/z/new_lam_00001.com",
+    "sha256": "972e08aa400d6f1c2acdec17b6fa86f4885f6554e366057a94994e9f01273d39",
+    "bytes": 2906
+  },
+  {
+    "source": "hess_debug/roy/new_lam_00050/cart-2-z/new_lam_00001.log",
+    "path": "roy_new_lam_00050/cart-2-z/new_lam_00001.log",
+    "sha256": "eef9bd4b22764c8c09db21650a81967ddd010ac2bf533ddfc4f480c22bcdff83",
+    "bytes": 206623
+  },
+  {
+    "source": "hess_debug/roy/new_lam_00050/cart-2-z/uniform_lam_00001.fchk",
+    "path": "roy_new_lam_00050/cart-2-z/uniform_lam_00001.fchk",
+    "sha256": "0eac58bab16f6b0456296590a676a6a69ca9fb27de91ed35b668a8628df7b0bf",
+    "bytes": 1674850
+  },
+  {
+    "source": "hess_debug/roy/new_lam_00050/cart-2-z/new_lam_00001.com",
+    "path": "roy_new_lam_00050/cart-2-z/new_lam_00001.com",
+    "sha256": "d5b65818ae3cf521d71ebd361ae5e8a73ee7645e5c3615004dcd7dd9705e5458",
+    "bytes": 2870
+  },
+  {
+    "source": "hess_debug/roy/new_lam_00050/z/uniform_lam_00001_zmat.fchk",
+    "path": "roy_new_lam_00050/z/uniform_lam_00001_zmat.fchk",
+    "sha256": "a8dce112b6a897419c7e8569e7ad4c845194f32a12f36c504e52afcbd464ddd1",
+    "bytes": 1660436
+  },
+  {
+    "source": "hess_debug/roy/new_lam_00050/z/new_lam_00001.log",
+    "path": "roy_new_lam_00050/z/new_lam_00001.log",
+    "sha256": "33964ef54346a30ebf7125432396d19824fc8c28f720c62ce8acabbe3aac0bbc",
+    "bytes": 168259
+  },
+  {
+    "source": "hess_debug/roy/new_lam_00050/z/new_lam_00001.com",
+    "path": "roy_new_lam_00050/z/new_lam_00001.com",
+    "sha256": "2f2ed2d9e8a3ec74cd54d37e0afb4c2058d4bb33dd26601ccb4244bd43e9f047",
+    "bytes": 2906
+  },
+  {
+    "source": "hess_debug/vusdix/new_lam_00001/cart-2-z/new_lam_00001.log",
+    "path": "vusdix_new_lam_00001/cart-2-z/new_lam_00001.log",
+    "sha256": "d8c4be9c0e8ee43ce595ec70b72ec5f32908723f94502ec958a95f4ba21e63fb",
+    "bytes": 468397
+  },
+  {
+    "source": "hess_debug/vusdix/new_lam_00001/cart-2-z/uniform_lam_00001.fchk",
+    "path": "vusdix_new_lam_00001/cart-2-z/uniform_lam_00001.fchk",
+    "sha256": "2fa72404b02c8d867c4ef8d2c7c1b02568eda833c26e4b9f942a6c24420fed6a",
+    "bytes": 4107174
+  },
+  {
+    "source": "hess_debug/vusdix/new_lam_00001/cart-2-z/new_lam_00001.com",
+    "path": "vusdix_new_lam_00001/cart-2-z/new_lam_00001.com",
+    "sha256": "3386c5396eacab8dc2f38bba29a06ad6a2d4e040787e12ad104b9c1cd64fa6ba",
+    "bytes": 4923
+  },
+  {
+    "source": "hess_debug/vusdix/new_lam_00001/z/uniform_lam_00001_zmat.fchk",
+    "path": "vusdix_new_lam_00001/z/uniform_lam_00001_zmat.fchk",
+    "sha256": "4fe10a52128f2e4039b2efa87aed6bff99459be242ffbb92962327a33e7594f8",
+    "bytes": 4082542
+  },
+  {
+    "source": "hess_debug/vusdix/new_lam_00001/z/new_lam_00001.log",
+    "path": "vusdix_new_lam_00001/z/new_lam_00001.log",
+    "sha256": "92ca86858831cd81fcb1daa61c62af3bb4019960436b298f56787fb0a0b07622",
+    "bytes": 362015
+  },
+  {
+    "source": "hess_debug/vusdix/new_lam_00001/z/new_lam_00001.com",
+    "path": "vusdix_new_lam_00001/z/new_lam_00001.com",
+    "sha256": "d98169ec15929743c2a89ca0eca84232eb132d80eb1c100f1c00baaf053a58ef",
+    "bytes": 4958
+  }
+]

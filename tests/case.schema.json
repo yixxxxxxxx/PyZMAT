@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Standalone Python scientific test case version 2",
+  "type": "object",
+  "required": ["schema_version", "test_id", "package", "level", "runner", "limits", "toolchain", "tolerance_class", "status", "reference"],
+  "properties": {
+    "schema_version": {"const": 2},
+    "test_id": {"type": "string", "pattern": "^[a-z0-9-]+$"},
+    "package": {"enum": ["pyzmat", "ml-lams"]},
+    "level": {"enum": ["L0", "L1", "L2", "L3"]},
+    "runner": {"type": "object", "required": ["adapter", "args"], "properties": {"adapter": {"const": "pytest_case"}, "args": {"type": "object", "required": ["nodes"], "properties": {"nodes": {"type": "array", "minItems": 1, "items": {"type": "string"}}}}}},
+    "limits": {"type": "object", "required": ["wall_s", "cpu_s", "memory_mb", "threads"], "properties": {"wall_s": {"type": "number", "exclusiveMinimum": 0}, "cpu_s": {"type": "number", "exclusiveMinimum": 0}, "memory_mb": {"type": "number", "exclusiveMinimum": 0}, "threads": {"type": "integer", "minimum": 1}}},
+    "toolchain": {"type": "object"},
+    "tolerance_class": {"enum": ["T0", "T1", "T2", "T3"]},
+    "status": {"enum": ["prepared", "baseline_accepted", "historical_reference", "reference_needs_rerun", "retired"]},
+    "reference": {"type": "object", "required": ["path"]}
+  }
+}

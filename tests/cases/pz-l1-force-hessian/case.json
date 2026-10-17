@@ -1,0 +1,45 @@
+{
+  "schema_version": 2,
+  "test_id": "pz-l1-force-hessian",
+  "package": "pyzmat",
+  "level": "L1",
+  "status": "prepared",
+  "runner": {
+    "adapter": "pytest_case",
+    "args": {
+      "nodes": [
+        "tests/test_structure.py::test_energy_force_hessian"
+      ]
+    }
+  },
+  "limits": {
+    "wall_s": 60,
+    "cpu_s": 45,
+    "memory_mb": 4096,
+    "threads": 1
+  },
+  "toolchain": {
+    "python_modules": [
+      "numpy",
+      "ase",
+      "pytest"
+    ],
+    "environment": [],
+    "gpu_required": false
+  },
+  "tolerance_class": "T3",
+  "tolerance_bounds": {
+    "force_atol": 1e-06,
+    "force_rtol": 1e-06,
+    "hessian_atol": 0.0001,
+    "hessian_rtol": 1e-05,
+    "units": "eV/(angstrom or radian) per coordinate axis",
+    "justification": "Independent scalar-energy central differences at h/2,h,2h"
+  },
+  "tags": {
+    "regime": "pz-l1-force-hessian"
+  },
+  "reference": {
+    "path": "result/reference.json"
+  }
+}

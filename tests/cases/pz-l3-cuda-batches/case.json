@@ -1,0 +1,44 @@
+{
+  "schema_version": 2,
+  "test_id": "pz-l3-cuda-batches",
+  "package": "pyzmat",
+  "level": "L3",
+  "status": "prepared",
+  "runner": {
+    "adapter": "pytest_case",
+    "args": {
+      "nodes": [
+        "tests/test_campaigns.py::test_archive_cuda_batches",
+        "tests/test_torch_derivatives.py"
+      ]
+    }
+  },
+  "limits": {
+    "wall_s": 28800,
+    "cpu_s": 100000,
+    "memory_mb": 32768,
+    "threads": 1
+  },
+  "toolchain": {
+    "python_modules": [
+      "numpy",
+      "ase",
+      "pytest",
+      "torch",
+      "pyzmat"
+    ],
+    "environment": [],
+    "gpu_required": true
+  },
+  "tolerance_class": "T3",
+  "tolerance_bounds": {
+    "definition": "Numerical bounds and independent oracle are explicit in each selected test; see tests/README.md.",
+    "units": "eV, angstrom, radian; Gaussian archive Hartree, bohr, radian"
+  },
+  "tags": {
+    "regime": "pz-l3-cuda-batches"
+  },
+  "reference": {
+    "path": "result/reference.json"
+  }
+}

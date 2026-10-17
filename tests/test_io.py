@@ -164,3 +164,47 @@ CARTESIAN GRADIENT
          [0.7, -0.8, -0.9], [1.0, -1.1, -1.2]]
     ) * factor
     assert_allclose(forces, expected_forces, rtol=1e-7)
+
+
+def test_export_permutation_and_packed_hessian(molecule,tmp_path):
+    import re
+    molecule.energy=-3.125
+    molecule.forces=np.arange(1,10,dtype=float)
+    raw=np.arange(81,dtype=float).reshape(9,9)
+    molecule.hessian=raw+raw.T
+    path=tmp_path/'export.fchk';molecule.save_gaussian_fchk(path)
+    fields={};current=None
+    for line in path.read_text().splitlines():
+        match=re.match(r'^(.*?)\s+R\s+N=\s*(\d+)',line)
+        if match:
+            current=match.group(1).strip();fields[current]=[]
+        elif line.strip(): fields[current].extend(map(float,line.split()))
+    # Natural coordinates: b2,b3,a3,b4,a4,t4,b5,a5,t5.
+    # Fixed: b2,a3,t4. Gaussian-style ML output keeps Å and radians, /Ha only.
+    order=[1,3,4,6,7,8,0,2,5]
+    assert_allclose(fields['Internal Forces'],molecule.forces[order]/Ha,rtol=5e-8,atol=1e-10)
+    expected=molecule.hessian[np.ix_(order,order)]/Ha
+    assert_allclose(fields['Internal Force Constants'],expected[np.tril_indices(9)],rtol=5e-8,atol=1e-10)
+    log=tmp_path/'export.log';molecule.save_gaussian_log(log)
+    energy=float(re.search(r'SCF Done:.*?=\s*([-+0-9.Ee]+)',log.read_text()).group(1))*Ha
+    assert abs(energy-molecule.energy)<2e-8
+
+
+def test_gaussian_input_rejects_undefined_coordinate(molecule,tmp_path):
+    import pytest
+    path=tmp_path/'bad.com';molecule.save_gaussian_com(path)
+    path.write_text(path.read_text().replace('bnd2','missing',1))
+    with pytest.raises(ValueError,match='Undefined'):
+        ZMatrix.load_from_gaussian_input(path)
+
+
+def test_export_rejects_nonfinite_and_write_failure(molecule,tmp_path):
+    import pytest
+    molecule.forces=np.ones(9);molecule.hessian=np.eye(9)
+    molecule.hessian[0,0]=np.nan
+    with pytest.raises(ValueError,match='finite'):
+        molecule.save_gaussian_fchk(tmp_path/'invalid.fchk')
+    assert not (tmp_path/'invalid.fchk').exists()
+    molecule.hessian=np.eye(9)
+    with pytest.raises(OSError):
+        molecule.save_gaussian_fchk(tmp_path)

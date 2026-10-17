@@ -1,0 +1,46 @@
+{
+  "schema_version": 2,
+  "test_id": "pz-l3-model-derivatives",
+  "package": "pyzmat",
+  "level": "L3",
+  "status": "prepared",
+  "runner": {
+    "adapter": "pytest_case",
+    "args": {
+      "nodes": [
+        "tests/test_campaigns.py::test_real_model_hessian_methods"
+      ]
+    }
+  },
+  "limits": {
+    "wall_s": 28800,
+    "cpu_s": 100000,
+    "memory_mb": 32768,
+    "threads": 1
+  },
+  "toolchain": {
+    "python_modules": [
+      "numpy",
+      "ase",
+      "pytest",
+      "torch",
+      "pyzmat",
+      "mace"
+    ],
+    "environment": [
+      "LAM_MODEL"
+    ],
+    "gpu_required": false
+  },
+  "tolerance_class": "T3",
+  "tolerance_bounds": {
+    "definition": "Numerical bounds and independent oracle are explicit in each selected test; see tests/README.md.",
+    "units": "eV, angstrom, radian; Gaussian archive Hartree, bohr, radian"
+  },
+  "tags": {
+    "regime": "pz-l3-model-derivatives"
+  },
+  "reference": {
+    "path": "result/reference.json"
+  }
+}

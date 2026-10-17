@@ -1,0 +1,44 @@
+{
+  "schema_version": 2,
+  "test_id": "pz-l2-hessian-methods",
+  "package": "pyzmat",
+  "level": "L2",
+  "status": "prepared",
+  "runner": {
+    "adapter": "pytest_case",
+    "args": {
+      "nodes": [
+        "tests/test_hessian_workflow.py::test_three_hessian_methods_and_serialization",
+        "tests/test_hessian_workflow.py::test_fd_invalid_steps"
+      ]
+    }
+  },
+  "limits": {
+    "wall_s": 600,
+    "cpu_s": 480,
+    "memory_mb": 8192,
+    "threads": 1
+  },
+  "toolchain": {
+    "python_modules": [
+      "numpy",
+      "ase",
+      "pytest"
+    ],
+    "environment": [],
+    "gpu_required": false
+  },
+  "tolerance_class": "T3",
+  "tolerance_bounds": {
+    "atol": 0.0001,
+    "rtol": 1e-05,
+    "units": "eV/(q_i q_j)",
+    "justification": "Analytical polynomial with FD step sweep"
+  },
+  "tags": {
+    "regime": "pz-l2-hessian-methods"
+  },
+  "reference": {
+    "path": "result/reference.json"
+  }
+}

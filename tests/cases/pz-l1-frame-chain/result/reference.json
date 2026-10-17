@@ -1,0 +1,10 @@
+{
+  "status": "prepared",
+  "oracle": "independent analytical assertions or raw external derivatives in selected tests",
+  "provenance": {
+    "baseline_accepted": false
+  },
+  "scientific": {
+    "required": "all selected assertions pass; required skips prevent promotion"
+  }
+}

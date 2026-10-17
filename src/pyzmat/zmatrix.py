@@ -465,10 +465,12 @@ class ZMatrix:
     
     def get_full_fd_hessian(self, db, da, dt):
         """
-        Symmetric (3N-6) × (3N-6) Hessian obtained from analytic forces,
+        Raw (3N-6) × (3N-6) Hessian obtained from analytic forces,
         computed serially. For testing only.
         """
         deltas = [db, da, dt]
+        if not all(np.isfinite(step) and step > 0 for step in deltas):
+            raise ValueError("Finite-difference steps must be finite and positive")
     
         # list of internal-coordinate positions (i, j) that are not None
         valid_indices = [(i, j)
@@ -484,19 +486,14 @@ class ZMatrix:
             delta = deltas[valid_indices[k][1] - 1]
             H[:, k] = self._hessian_column(k, delta, valid_indices)
     
-        # enforce exact symmetry
-        #H = 0.5 * (H + H.T)
-    
-        # copy already-scaled angle/torsion columns into their mirror rows
-        for k, (_, j) in enumerate(valid_indices):
-            if j in (2, 3):				# angle or torsion
-                H[k, :] = H[:, k]
-    
+        # Preserve independent columns so asymmetry remains diagnostic.
         return H
         
 
     def get_geom_fd_hessian(self, db, da, dt):
         """Quasi-analytical Hessian from a finite-difference curvature tensor, for testing only"""
+        if not all(np.isfinite(step) and step > 0 for step in (db, da, dt)):
+            raise ValueError("Finite-difference steps must be finite and positive")
         H_cart = np.array(self.get_hess_cart())
         B = self._get_B_matrix()
         K = ZmatUtils.get_fd_curvature_tensor(self.zmat, self.zmat_conn, db, da, dt)
@@ -530,10 +527,14 @@ class ZMatrix:
     ## Optimisation with ASE ########################################################################
     # Not recommended (especially with large molecules), use ORCA extopt instead
     
-    def optimise_ase(self, trajectory = None, mode = 'linesearch', fmax = 2.31e-2, calc_hess = False, fix_rototrans = False):
+    def optimise_ase(self, trajectory = None, mode = 'linesearch', fmax = 2.31e-2, calc_hess = False, fix_rototrans = False, max_steps=500):
         from ase.optimize.bfgslinesearch import BFGSLineSearch
         from ase.optimize import BFGS
         
+        if mode not in {'linesearch', 'bfgs'}:
+            raise ValueError('mode must be linesearch or bfgs')
+        if isinstance(max_steps, bool) or not isinstance(max_steps, int) or max_steps < 1:
+            raise ValueError('max_steps must be a positive integer')
         print('Initialising minimisation routine')
         start_tot = time.perf_counter()
         print('Model used:', self.calculator, self.model_size)
@@ -565,7 +566,8 @@ class ZMatrix:
             print(f'Now beginning ASE BFGS Line Search minimisation routine, convergence threshold: fmax = {fmax}')
             print('--------------------------------------------------------------------------------------')
             start_min = time.perf_counter()
-            dyn.run(fmax = fmax)
+            if not dyn.run(fmax=fmax, steps=max_steps):
+                raise RuntimeError(f'ASE optimization did not converge within {max_steps} steps')
             end_min = time.perf_counter()
             energy = atoms.get_potential_energy()
             print('--------------------------------------------------------------------------------------')
@@ -577,7 +579,8 @@ class ZMatrix:
             print(f'Now beginning ASE BFGS minimisation routine, convergence threshold: fmax = {fmax}')
             print('--------------------------------------------------------------------------------------')
             start_min = time.perf_counter()
-            dyn.run(fmax = fmax)
+            if not dyn.run(fmax=fmax, steps=max_steps):
+                raise RuntimeError(f'ASE optimization did not converge within {max_steps} steps')
             end_min = time.perf_counter()
             energy = atoms.get_potential_energy()
             print('--------------------------------------------------------------------------------------')
@@ -701,6 +704,7 @@ class ZMatrix:
 
         
     def run_optking(self, geometry, symbols, opt_options, max_iter):
+        import optking
 
         if self.constraints is not None:
             psi4_constraints = self.get_optking_constraints()
@@ -942,8 +946,8 @@ class ZMatrix:
                 if not zmat_text.endswith('\n'):
                     f.write('\n')
                 f.write(postamble)
-        except IOError as e:
-            print(f"Error writing to {filename}: {e}")
+        except IOError:
+            raise
 
     def save_gaussian_log(self, filename):
         """Save Gaussian-like log output for the current internal coordinates."""
@@ -964,8 +968,8 @@ class ZMatrix:
                 f.write(log_text)
                 if not log_text.endswith('\n'):
                     f.write('\n')
-        except IOError as e:
-            print(f"Error writing to {filename}: {e}")
+        except IOError:
+            raise
 
     def save_gaussian_fchk(self, filename):
         """Save Gaussian-like formatted checkpoint data for current forces and Hessian."""
@@ -986,8 +990,8 @@ class ZMatrix:
                 f.write(fchk_text)
                 if not fchk_text.endswith('\n'):
                     f.write('\n')
-        except IOError as e:
-            print(f"Error writing to {filename}: {e}")
+        except IOError:
+            raise
 
     def save_mace_train_xyz(self, filename):
         '''
@@ -997,8 +1001,8 @@ class ZMatrix:
         try:
             with open(filename, 'a', encoding='utf-8') as f:
                 f.write(file_content)
-        except IOError as e:
-            print(f"Error writing to {filename}: {e}")
+        except IOError:
+            raise
 
     def save_orca_input(self, filename, *,
         level_of_theory: str = "PBE0",
@@ -1025,8 +1029,8 @@ class ZMatrix:
         try:
             with open(filename, 'w', encoding='utf-8') as f:
                 f.write(orca_input)
-        except IOError as e:
-            print(f"Error writing to {filename}: {e}")
+        except IOError:
+            raise
 
     def save_orca_extopt_input(self, filename, wrapper_path, *,
         maxcore_mb: int = 1000,
@@ -1052,8 +1056,8 @@ class ZMatrix:
         try:
             with open(filename, 'w', encoding='utf-8') as f:
                 f.write(orca_input)
-        except IOError as e:
-            print(f"Error writing to {filename}: {e}")
+        except IOError:
+            raise
 
 
 
@@ -1092,5 +1096,5 @@ class ZMatrix:
         try:
             with open(filename, 'w', encoding='utf-8') as f:
                 f.write(orca_input)
-        except IOError as e:
-            print(f"Error writing to {filename}: {e}")
+        except IOError:
+            raise
